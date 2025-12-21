@@ -1,0 +1,513 @@
+	import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { initializeApp } from 'firebase/app';
+import { 
+  getAuth, 
+  signInAnonymously, 
+  onAuthStateChanged,
+  signInWithCustomToken
+} from 'firebase/auth';
+import { 
+  getFirestore, 
+  collection, 
+  doc, 
+  setDoc, 
+  getDoc, 
+  onSnapshot, 
+  updateDoc, 
+  arrayUnion, 
+  increment,
+  deleteField,
+  serverTimestamp
+} from 'firebase/firestore';
+import { 
+  Play, 
+  Users, 
+  User, 
+  AlertTriangle,
+  RotateCcw,
+  Cpu,
+  Trophy,
+  Moon,
+  ChevronRight,
+  HelpCircle,
+  Layers,
+  Trash2
+} from 'lucide-react';
+
+// --- Firebase Configuration ---
+const firebaseConfig = JSON.parse(__firebase_config);
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+
+// --- Game Logic Constants ---
+const CARD_TYPES = {
+  NUMBER: 'number',
+  OBAKE: 'obake',
+  CAVALRY: 'cavalry',
+  NIGHT: 'night',
+  CHIEF: 'chief',
+  FOX: 'fox',
+  CAVE: 'cave'
+};
+
+const GET_FULL_DECK = () => {
+  const cards = [];
+  // コヨーテカード (26枚)
+  cards.push(...Array(1).fill({ value: 1, type: CARD_TYPES.NUMBER, label: '1' }));
+  cards.push(...Array(4).fill({ value: 2, type: CARD_TYPES.NUMBER, label: '2' }));
+  cards.push(...Array(4).fill({ value: 3, type: CARD_TYPES.NUMBER, label: '3' }));
+  cards.push(...Array(4).fill({ value: 4, type: CARD_TYPES.NUMBER, label: '4' }));
+  cards.push(...Array(4).fill({ value: 5, type: CARD_TYPES.NUMBER, label: '5' }));
+  cards.push(...Array(3).fill({ value: 10, type: CARD_TYPES.NUMBER, label: '10' }));
+  cards.push(...Array(2).fill({ value: 15, type: CARD_TYPES.NUMBER, label: '15' }));
+  cards.push(...Array(1).fill({ value: 20, type: CARD_TYPES.NUMBER, label: '20' }));
+  cards.push(...Array(3).fill({ value: 0, type: CARD_TYPES.NUMBER, label: '0' })); 
+  // 兵隊カード (3枚)
+  cards.push(...Array(2).fill({ value: -5, type: CARD_TYPES.CAVALRY, label: '-5' }));
+  cards.push(...Array(1).fill({ value: -10, type: CARD_TYPES.CAVALRY, label: '-10' }));
+  // 特殊カード (各1枚)
+  cards.push({ value: 0, type: CARD_TYPES.NIGHT, label: 'シャッフル 0' });
+  cards.push({ value: 0, type: CARD_TYPES.CHIEF, label: '×2' });
+  cards.push({ value: 0, type: CARD_TYPES.FOX, label: 'MAX→0' });
+  cards.push({ value: 0, type: CARD_TYPES.CAVE, label: '?' });
+
+  return cards.map((c, i) => ({ ...c, id: `card-${i}-${Math.random()}` }));
+};
+
+const shuffle = (array) => {
+  const newArray = [...array];
+  for (let i = newArray.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [newArray[i], newArray[j]] = [newArray[j], newArray[i]];
+  }
+  return newArray;
+};
+
+const calculateTotal = (visibleCards, deck) => {
+  let steps = [];
+  let currentCards = [...visibleCards];
+  let caveAddedCard = null;
+  let remainingDeck = [...deck];
+
+  if (currentCards.some(c => c.type === CARD_TYPES.CAVE)) {
+    if (remainingDeck.length > 0) {
+      caveAddedCard = remainingDeck.shift();
+      currentCards.push(caveAddedCard);
+      steps.push(`ほらあな(?): 山札から ${caveAddedCard.label} を追加`);
+    } else {
+      steps.push(`ほらあな(?): 山札が空です`);
+    }
+  }
+
+  const foxExists = currentCards.some(c => c.type === CARD_TYPES.FOX);
+  if (foxExists) {
+    let maxVal = -Infinity;
+    let targetIdx = -1;
+    currentCards.forEach((c, i) => {
+      const val = (c.type === CARD_TYPES.NUMBER || c.type === CARD_TYPES.CAVALRY) ? c.value : 0;
+      if (val > maxVal) {
+        maxVal = val;
+        targetIdx = i;
+      }
+    });
+    if (targetIdx !== -1) {
+      steps.push(`キツネ(MAX→0): 最大値 ${currentCards[targetIdx].label} を 0 化`);
+      currentCards[targetIdx] = { ...currentCards[targetIdx], value: 0, label: '0(キツネ)', isFoxed: true };
+    }
+  }
+
+  let sum = 0;
+  currentCards.forEach(c => { sum += (c.value || 0); });
+  steps.push(`基本合計: ${sum}`);
+
+  if (currentCards.some(c => c.type === CARD_TYPES.CHIEF)) {
+    sum *= 2;
+    steps.push(`酋長(×2): 合計を2倍にして ${sum}`);
+  }
+
+  const nightExists = currentCards.some(c => c.type === CARD_TYPES.NIGHT);
+  return { total: sum, steps, nightExists, remainingDeck };
+};
+
+// --- Custom UI Components ---
+
+const DrumRollSelector = ({ minVal, maxVal, onSelect }) => {
+  const scrollRef = useRef(null);
+  const itemHeight = 64; 
+  const [activeIndex, setActiveIndex] = useState(0);
+
+  const options = useMemo(() => {
+    const arr = [];
+    for (let i = minVal; i <= maxVal; i++) arr.push(i);
+    return arr;
+  }, [minVal, maxVal]);
+
+  const handleScroll = () => {
+    if (!scrollRef.current) return;
+    const scrollTop = scrollRef.current.scrollTop;
+    const index = Math.round(scrollTop / itemHeight);
+    if (index >= 0 && index < options.length) {
+      setActiveIndex(index);
+      onSelect(options[index]);
+    }
+  };
+
+  return (
+    <div className="relative w-40 h-[320px] bg-slate-900 rounded-[32px] overflow-hidden border-4 border-indigo-500/30 shadow-2xl">
+      <div className="absolute top-1/2 left-0 right-0 h-16 -translate-y-1/2 bg-indigo-500/20 border-y-2 border-indigo-500/50 pointer-events-none z-10" />
+      <div className="absolute inset-0 pointer-events-none z-20 bg-gradient-to-b from-slate-950 via-transparent to-slate-950" />
+      <div 
+        ref={scrollRef}
+        onScroll={handleScroll}
+        className="w-full h-full overflow-y-scroll no-scrollbar snap-y snap-mandatory"
+      >
+        <div style={{ height: `${itemHeight * 2}px` }} />
+        {options.map((val, i) => (
+          <div 
+            key={val}
+            className={`h-16 flex items-center justify-center text-4xl font-black transition-all duration-200 snap-center
+              ${i === activeIndex ? 'text-white scale-125' : 'text-slate-600 opacity-30'}
+            `}
+          >
+            {val}
+          </div>
+        ))}
+        <div style={{ height: `${itemHeight * 2}px` }} />
+      </div>
+    </div>
+  );
+};
+
+const Card = ({ card, isHidden, isOwner }) => {
+  if (!card) return <div className="w-20 h-28 md:w-24 md:h-36 bg-slate-800 rounded-2xl border-2 border-dashed border-slate-700"></div>;
+  
+  const getCardColor = () => {
+    if (isHidden) return 'bg-indigo-600 border-indigo-400';
+    if (card.type === CARD_TYPES.NUMBER) return 'bg-white border-slate-200';
+    if (card.type === CARD_TYPES.CAVALRY) return 'bg-rose-100 border-rose-300';
+    return 'bg-amber-100 border-amber-300';
+  };
+
+  const renderContent = () => {
+    if (card.type === CARD_TYPES.FOX) {
+      return (
+        <div className="flex flex-col items-center justify-center leading-tight">
+          <div className="text-xl font-black text-slate-900">MAX</div>
+          <div className="text-lg font-black text-slate-400">↓</div>
+          <div className="text-3xl font-black text-slate-900">0</div>
+        </div>
+      );
+    }
+    return <div className={`text-3xl md:text-4xl font-black text-center leading-none ${card.value < 0 ? 'text-rose-600' : 'text-slate-900'}`}>{card.label}</div>;
+  };
+
+  return (
+    <div className={`relative w-20 h-28 md:w-24 md:h-36 rounded-2xl shadow-xl flex flex-col items-center justify-center p-3 border-4 transition-all ${getCardColor()}`}>
+      {isHidden ? (
+        <div className="text-white font-black text-center">
+          <div className="text-xs opacity-50 mb-1 tracking-tighter italic">COYOTE</div>
+          <div className="text-4xl">?</div>
+          {isOwner && <div className="text-[8px] mt-2 text-indigo-200 leading-tight">自分は内緒</div>}
+        </div>
+      ) : (
+        <>
+          {renderContent()}
+          <div className="text-[8px] text-slate-500 font-black mt-2 uppercase tracking-widest text-center opacity-70">
+            {card.type === CARD_TYPES.NUMBER ? 'COYOTE' : card.type === CARD_TYPES.CAVALRY ? 'SOLDIER' : 'SPECIAL'}
+          </div>
+        </>
+      )}
+    </div>
+  );
+};
+
+// --- Main App ---
+
+export default function CoyoteApp() {
+  const [user, setUser] = useState(null);
+  const [view, setView] = useState('home'); 
+  const [roomId, setRoomId] = useState('');
+  const [gameState, setGameState] = useState(null);
+  const [isLocalMode, setIsLocalMode] = useState(false);
+  const [playerCountSetting, setPlayerCountSetting] = useState(3);
+  const [selectedDeclaration, setSelectedDeclaration] = useState(1);
+
+  useEffect(() => {
+    const initAuth = async () => {
+      if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+        await signInWithCustomToken(auth, __initial_auth_token);
+      } else {
+        await signInAnonymously(auth);
+      }
+    };
+    initAuth();
+    onAuthStateChanged(auth, setUser);
+  }, []);
+
+  useEffect(() => {
+    if (!user || !roomId || view !== 'game' || isLocalMode) return;
+    return onSnapshot(doc(db, 'artifacts', appId, 'public', 'data', 'rooms', `room_${roomId}`), (s) => {
+      if (s.exists()) {
+        const data = s.data();
+        setGameState(data);
+        if (data.status === 'playing') setSelectedDeclaration(data.currentDeclaration + 1);
+      }
+    });
+  }, [user, roomId, view, isLocalMode]);
+
+  useEffect(() => {
+    if (!isLocalMode || !gameState || gameState.status !== 'playing') return;
+    const currentPlayer = gameState.players[gameState.currentTurnIndex];
+    if (currentPlayer?.uid.startsWith('cpu-')) {
+      const timer = setTimeout(() => {
+        const otherCards = gameState.players
+          .filter((_, idx) => idx !== gameState.currentTurnIndex && gameState.players[idx].lives > 0)
+          .map(p => p.card);
+        const { total: visibleTotal } = calculateTotal(otherCards, []);
+        const estimatedTotal = visibleTotal + 5;
+        if (gameState.currentDeclaration >= estimatedTotal) handleCoyote();
+        else handleDeclare(gameState.currentDeclaration + (Math.random() > 0.8 ? 2 : 1));
+      }, 1500);
+      return () => clearTimeout(timer);
+    }
+  }, [isLocalMode, gameState?.currentTurnIndex, gameState?.status]);
+
+  const startLocalGame = () => {
+    setIsLocalMode(true);
+    let deck = shuffle(GET_FULL_DECK());
+    const players = [{ uid: user.uid, name: 'You', lives: 3, card: deck.pop() }];
+    for (let i = 1; i < playerCountSetting; i++) {
+      players.push({ uid: `cpu-${i}`, name: `CPU ${i}`, lives: 3, card: deck.pop() });
+    }
+    setGameState({
+      status: 'playing', players, deck, discardPile: [], currentTurnIndex: 0, currentDeclaration: 0, maxPlayers: playerCountSetting, nightShuffled: false
+    });
+    setSelectedDeclaration(1);
+    setView('game');
+  };
+
+  const nextRound = async () => {
+    const survivors = gameState.players.filter(p => p.lives > 0);
+    if (survivors.length === 1) {
+      const nextState = { ...gameState, status: 'winner', winner: survivors[0] };
+      if (isLocalMode) setGameState(nextState);
+      else await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'rooms', `room_${roomId}`), nextState);
+      return;
+    }
+
+    let players = [...gameState.players];
+    let deck = [...gameState.deck];
+    let discardPile = [...(gameState.discardPile || [])];
+    players.forEach(p => { if (p.card) discardPile.push(p.card); });
+    if (gameState.nightShuffled || deck.length < players.length + 2) {
+      deck = shuffle([...discardPile, ...deck]);
+      discardPile = [];
+    }
+    players = players.map(p => (p.lives > 0 ? { ...p, card: deck.pop() } : { ...p, card: null }));
+    const nextState = { ...gameState, status: 'playing', deck, discardPile, players, currentDeclaration: 0, currentTurnIndex: players.findIndex(p => p.lives > 0), resultData: null, nightShuffled: false };
+    setSelectedDeclaration(1);
+    if (isLocalMode) setGameState(nextState);
+    else await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'rooms', `room_${roomId}`), nextState);
+  };
+
+  const handleDeclare = async (val) => {
+    let next = (gameState.currentTurnIndex + 1) % gameState.players.length;
+    while(gameState.players[next].lives <= 0) next = (next + 1) % gameState.players.length;
+    const nextState = { ...gameState, currentDeclaration: val, currentTurnIndex: next };
+    if (isLocalMode) setGameState(nextState);
+    else await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'rooms', `room_${roomId}`), nextState);
+  };
+
+  const handleCoyote = async () => {
+    const activeCards = gameState.players.filter(p => p.lives > 0).map(p => p.card);
+    const { total, steps, nightExists, remainingDeck } = calculateTotal(activeCards, gameState.deck);
+    const dec = gameState.currentDeclaration;
+    let prev = (gameState.currentTurnIndex - 1 + gameState.players.length) % gameState.players.length;
+    while(gameState.players[prev].lives <= 0) prev = (prev - 1 + gameState.players.length) % gameState.players.length;
+    
+    const loserIdx = dec > total ? prev : gameState.currentTurnIndex;
+    const players = [...gameState.players];
+    players[loserIdx].lives -= 1;
+    
+    const nextState = { 
+      ...gameState, 
+      status: 'result', 
+      players, 
+      deck: remainingDeck, 
+      resultData: { 
+        total, 
+        message: dec > total ? `大成功！ ${total} < ${dec}` : `ドボン！ ${total} >= ${dec}`, 
+        steps 
+      }, 
+      nightShuffled: nightExists 
+    };
+    if (isLocalMode) setGameState(nextState);
+    else await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'rooms', `room_${roomId}`), nextState);
+  };
+
+  return (
+    <div className="min-h-screen bg-slate-950 text-slate-200 font-sans selection:bg-indigo-500 overflow-x-hidden pb-20">
+      <header className="p-6 flex justify-between items-center max-w-6xl mx-auto border-b border-white/5 mb-8">
+        <div className="flex items-center gap-3">
+          <div className="bg-indigo-600 p-2 rounded-xl shadow-lg shadow-indigo-600/20"><Moon size={24} className="text-white fill-white"/></div>
+          <h1 className="text-3xl font-black bg-gradient-to-br from-indigo-400 to-purple-500 bg-clip-text text-transparent italic tracking-tighter">COYOTE</h1>
+        </div>
+        {view !== 'home' && (
+          <button onClick={() => { setView('home'); setGameState(null); }} className="bg-slate-900 border border-slate-700 px-6 py-2 rounded-full text-xs font-black hover:bg-slate-800 transition-all">EXIT</button>
+        )}
+      </header>
+
+      <main className="p-4 max-w-7xl mx-auto">
+        {view === 'home' && (
+          <div className="flex flex-col items-center gap-10 mt-10">
+            <div className="bg-slate-900/50 border border-slate-800 p-8 rounded-[40px] w-full max-w-xl text-center">
+              <div className="text-indigo-400 uppercase text-[10px] font-black tracking-widest mb-6">Player Count</div>
+              <div className="flex items-center justify-center gap-10">
+                <button onClick={() => playerCountSetting > 2 && setPlayerCountSetting(p => p - 1)} className="w-16 h-16 rounded-3xl bg-slate-800 flex items-center justify-center hover:bg-slate-700 transition-all"><Minus size={24} /></button>
+                <div className="text-8xl font-black text-white">{playerCountSetting}</div>
+                <button onClick={() => playerCountSetting < 10 && setPlayerCountSetting(p => p + 1)} className="w-16 h-16 rounded-3xl bg-slate-800 flex items-center justify-center hover:bg-slate-700 transition-all"><Plus size={24} /></button>
+              </div>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 w-full max-w-4xl">
+              <button onClick={startLocalGame} className="bg-emerald-600 hover:bg-emerald-500 p-8 rounded-[32px] font-black text-2xl text-left transition-all flex items-center gap-6"><Cpu size={40}/> CPU対戦を開始</button>
+              <button onClick={() => setView('multi-lobby')} className="bg-indigo-600 hover:bg-indigo-500 p-8 rounded-[32px] font-black text-2xl text-left transition-all flex items-center gap-6"><Users size={40}/> オンライン対戦</button>
+            </div>
+          </div>
+        )}
+
+        {view === 'game' && gameState && (
+          <div className="space-y-12">
+            <div className="flex flex-wrap justify-center gap-6">
+              {gameState.players.map((p, i) => (
+                <div key={i} className={`p-4 rounded-3xl border-2 transition-all flex flex-col items-center min-w-[120px] ${i === gameState.currentTurnIndex && gameState.status === 'playing' ? 'border-indigo-500 bg-indigo-500/10 scale-110 shadow-2xl' : 'border-slate-800 bg-slate-900'} ${p.lives <= 0 ? 'opacity-20 grayscale' : ''}`}>
+                  <div className="text-[10px] font-black mb-3 text-slate-400">{p.name}</div>
+                  <Card card={p.card} isHidden={p.uid === user.uid && gameState.status === 'playing'} isOwner={p.uid === user.uid} />
+                  <div className="flex gap-1 mt-4">
+                    {Array.from({ length: 3 }).map((_, li) => (
+                      <div key={li} className={`w-3 h-3 rounded-full ${li < p.lives ? 'bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.6)]' : 'bg-slate-800'}`}></div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="flex flex-col md:flex-row items-center justify-center gap-8 py-6 bg-black/30 rounded-[48px] border border-white/5">
+              <div className="text-center">
+                <div className="w-24 h-32 bg-indigo-900 rounded-2xl border-2 border-indigo-400/50 flex flex-col items-center justify-center shadow-lg mb-2">
+                   <Layers size={24} className="text-indigo-400 mb-1 opacity-50" />
+                   <div className="text-3xl font-black text-white">{gameState.deck.length}</div>
+                </div>
+                <span className="text-[10px] font-black text-indigo-400 tracking-widest uppercase">山札</span>
+              </div>
+              <div className="text-center">
+                <div className="w-24 h-32 bg-slate-900 rounded-2xl border-2 border-slate-700/50 flex flex-col items-center justify-center shadow-lg mb-2">
+                   <Trash2 size={24} className="text-slate-700 mb-1 opacity-50" />
+                   <div className="text-3xl font-black text-slate-500">{gameState.discardPile?.length || 0}</div>
+                </div>
+                <span className="text-[10px] font-black text-slate-600 tracking-widest uppercase">捨て札</span>
+              </div>
+            </div>
+
+            <div className="max-w-4xl mx-auto">
+              {gameState.status === 'playing' ? (
+                gameState.players[gameState.currentTurnIndex]?.uid === user.uid ? (
+                  <div className="bg-slate-900 p-10 rounded-[48px] border-4 border-indigo-500 shadow-2xl animate-in slide-in-from-bottom-10">
+                    <div className="flex flex-col md:flex-row items-center gap-12">
+                      <div className="flex flex-col items-center gap-4">
+                        <DrumRollSelector 
+                          minVal={gameState.currentDeclaration + 1} 
+                          maxVal={150} 
+                          onSelect={setSelectedDeclaration} 
+                        />
+                      </div>
+                      <div className="flex-1 w-full space-y-8">
+                        <div className="bg-black/40 p-6 rounded-3xl border border-white/5 text-center">
+                          <div className="text-xs text-slate-500 font-black uppercase tracking-widest mb-2">現在の最高宣言</div>
+                          <div className="text-7xl font-black text-white">{gameState.currentDeclaration}</div>
+                        </div>
+                        <div className="grid grid-cols-1 gap-4">
+                          <button onClick={() => handleDeclare(selectedDeclaration)} className="bg-indigo-600 hover:bg-indigo-500 text-white py-6 rounded-3xl font-black text-3xl shadow-2xl transition-all active:scale-95 italic">
+                            {selectedDeclaration} を宣言！
+                          </button>
+                          {gameState.currentDeclaration > 0 && (
+                            <button onClick={handleCoyote} className="bg-rose-600/10 text-rose-500 border-2 border-rose-600/30 hover:bg-rose-600 hover:text-white py-4 rounded-3xl font-black text-lg transition-all">
+                              コヨーテ！
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-center p-20 bg-slate-900/40 rounded-[64px] border-4 border-dashed border-slate-800">
+                    <div className="text-sm font-black text-slate-500 uppercase tracking-[0.3em] mb-4 animate-pulse">Waiting for Player</div>
+                    <div className="text-2xl font-black text-white mb-8">{gameState.players[gameState.currentTurnIndex]?.name} のターン</div>
+                    <div className="text-[10px] text-slate-600 font-black uppercase tracking-widest mb-2">現在の宣言</div>
+                    <div className="text-8xl font-black text-slate-800">{gameState.currentDeclaration}</div>
+                  </div>
+                )
+              ) : gameState.status === 'result' ? (
+                <div className="bg-slate-900 p-10 rounded-[48px] border-4 border-white/10 shadow-2xl text-center">
+                  <h2 className="text-5xl font-black text-white italic mb-6">{gameState.resultData.message}</h2>
+                  <div className="text-[10px] font-black text-indigo-400 uppercase tracking-widest mb-2">実際の合計値</div>
+                  <div className="text-8xl font-black text-white mb-10">{gameState.resultData.total}</div>
+                  <div className="bg-black/40 p-6 rounded-3xl mb-10 space-y-2">
+                    {gameState.resultData.steps.map((s, i) => (
+                      <div key={i} className="text-slate-400 font-bold flex items-center justify-center gap-2 text-sm"><ChevronRight size={14}/> {s}</div>
+                    ))}
+                  </div>
+                  <button 
+                    onClick={nextRound} 
+                    className="w-full bg-white text-slate-950 py-6 rounded-3xl font-black text-2xl hover:bg-indigo-50 transition-all"
+                  >
+                    {gameState.players.filter(p => p.lives > 0).length === 1 ? '優勝者を確認する' : '次のラウンドへ'}
+                  </button>
+                </div>
+              ) : null}
+            </div>
+
+            {gameState.status === 'winner' && (
+              <div className="fixed inset-0 z-50 bg-slate-950/95 flex flex-col items-center justify-center p-6 animate-in fade-in duration-1000">
+                <div className="relative mb-12 flex flex-col items-center">
+                   <Trophy size={180} className="text-amber-500 animate-bounce" />
+                   <div className="absolute -top-10 -left-10 w-20 h-20 bg-amber-400/20 rounded-full blur-3xl animate-pulse"></div>
+                   <div className="absolute -bottom-10 -right-10 w-20 h-20 bg-indigo-500/20 rounded-full blur-3xl animate-pulse delay-700"></div>
+                </div>
+                
+                <div className="text-center space-y-4">
+                  <div className="text-4xl md:text-5xl font-black text-indigo-400 uppercase tracking-widest">Congratulations!</div>
+                  <h2 className="text-[100px] md:text-[140px] font-black text-white italic tracking-tighter leading-none py-6 animate-in zoom-in duration-500">
+                    {gameState.winner?.name}
+                  </h2>
+                  <div className="text-5xl md:text-7xl font-black bg-gradient-to-r from-amber-400 via-amber-200 to-amber-500 bg-clip-text text-transparent italic tracking-tighter">
+                    優勝！おめでとう
+                  </div>
+                </div>
+
+                <div className="mt-20">
+                  <button onClick={() => setView('home')} className="bg-white text-slate-950 px-20 py-8 rounded-full font-black text-3xl hover:scale-110 active:scale-95 transition-all shadow-[0_0_40px_rgba(255,255,255,0.2)]">
+                    トップへ戻る
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </main>
+
+      <style>{`
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        @keyframes zoom-in {
+          from { transform: scale(0.5); opacity: 0; }
+          to { transform: scale(1); opacity: 1; }
+        }
+      `}</style>
+    </div>
+  );
+}
+
+function Plus({ size = 24 }) { return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M5 12h14"/></svg>; }
+function Minus({ size = 24 }) { return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14"/></svg>; }
