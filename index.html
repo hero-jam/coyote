@@ -2,445 +2,336 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>COYOTE - Online & Local Game</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Online Coyote | オンライン・コヨーテ</title>
+    <!-- Tailwind CSS for styling -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
-    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap');
-        body { font-family: 'Inter', sans-serif; }
-        .no-scrollbar::-webkit-scrollbar { display: none; }
-        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
-        @keyframes zoom-in {
-            from { transform: scale(0.5); opacity: 0; }
-            to { transform: scale(1); opacity: 1; }
-        }
-        .animate-zoom-in { animation: zoom-in 0.5s cubic-bezier(0.16, 1, 0.3, 1); }
-    </style>
-</head>
-<body class="bg-slate-950 text-slate-200">
-    <div id="root"></div>
-
+    <!-- Firebase SDKs -->
     <script type="importmap">
     {
-        "imports": {
-            "firebase/app": "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js",
-            "firebase/auth": "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js",
-            "firebase/firestore": "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js"
-        }
+      "imports": {
+        "firebase/app": "https://www.gstatic.com/firebasejs/11.1.0/firebase-app.js",
+        "firebase/auth": "https://www.gstatic.com/firebasejs/11.1.0/firebase-auth.js",
+        "firebase/firestore": "https://www.gstatic.com/firebasejs/11.1.0/firebase-firestore.js"
+      }
     }
     </script>
+    <!-- React & Babel for Browser execution -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <!-- Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap');
+        body { font-family: 'Inter', sans-serif; -webkit-tap-highlight-color: transparent; }
+        .card-shadow { box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3), 0 8px 10px -6px rgba(0, 0, 0, 0.3); }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+    </style>
+</head>
+<body class="bg-slate-950 text-slate-100 overflow-hidden fixed inset-0">
+    <div id="root" class="h-full w-full"></div>
 
     <script type="text/babel">
-        // --- Mocking environment variables for standalone use ---
-        const __firebase_config = '{"apiKey": "dummy-key"}'; // 実際の設定があればここに上書き
-        const __app_id = 'coyote-app';
+        const { useState, useEffect, useCallback, useRef } = React;
+        const { initializeApp } = firebase_app;
+        const { getAuth, signInAnonymously, onAuthStateChanged } = firebase_auth;
+        const { getFirestore, doc, setDoc, getDoc, updateDoc, onSnapshot, serverTimestamp } = firebase_firestore;
 
-        // Icons as SVG Components (Lucide replacement)
-        const IconMoon = () => <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>;
-        const IconCpu = ({size=24}) => <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="16" height="16" x="4" y="4" rx="2"/><rect width="6" height="6" x="9" y="9" rx="1"/><path d="M15 2v2"/><path d="M15 20v2"/><path d="M2 15h2"/><path d="M2 9h2"/><path d="M20 15h2"/><path d="M20 9h2"/><path d="M9 2v2"/><path d="M9 20v2"/></svg>;
-        const IconUsers = ({size=24}) => <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>;
-        const IconTrophy = ({size=24}) => <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/></svg>;
-        const IconPlus = () => <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M5 12h14"/></svg>;
-        const IconMinus = () => <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14"/></svg>;
-        const IconChevronRight = ({size=24}) => <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m9 18 6-6-6-6"/></svg>;
-        const IconLayers = ({size=24}) => <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"/><path d="m2.6 12.08 8.58 3.9a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83l-8.58 3.91a2 2 0 0 1-1.66 0L2.6 10.25a1 1 0 0 1 0 1.83Z"/><path d="m2.6 17.08 8.58 3.9a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83l-8.58 3.91a2 2 0 0 1-1.66 0L2.6 15.25a1 1 0 0 1 0 1.83Z"/></svg>;
-        const IconTrash = ({size=24}) => <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></svg>;
-
-        const { useState, useEffect, useRef, useMemo } = React;
-
-        // --- Game Logic Constants ---
-        const CARD_TYPES = {
-            NUMBER: 'number',
-            OBAKE: 'obake',
-            CAVALRY: 'cavalry',
-            NIGHT: 'night',
-            CHIEF: 'chief',
-            FOX: 'fox',
-            CAVE: 'cave'
+        // --- Firebase Configuration ---
+        const firebaseConfig = {
+            apiKey: "AIzaSyCq9rT0N5X7HoCb-OZlBNEtyEAcjuTTDEA",
+            authDomain: "hero-tablegames.firebaseapp.com",
+            projectId: "hero-tablegames",
+            storageBucket: "hero-tablegames.firebasestorage.app",
+            messagingSenderId: "674602265882",
+            appId: "1:674602265882:web:13b2cbabe692f44c7890a3"
         };
 
-        const GET_FULL_DECK = () => {
-            const cards = [];
-            cards.push(...Array(1).fill({ value: 1, type: CARD_TYPES.NUMBER, label: '1' }));
-            cards.push(...Array(4).fill({ value: 2, type: CARD_TYPES.NUMBER, label: '2' }));
-            cards.push(...Array(4).fill({ value: 3, type: CARD_TYPES.NUMBER, label: '3' }));
-            cards.push(...Array(4).fill({ value: 4, type: CARD_TYPES.NUMBER, label: '4' }));
-            cards.push(...Array(4).fill({ value: 5, type: CARD_TYPES.NUMBER, label: '5' }));
-            cards.push(...Array(3).fill({ value: 10, type: CARD_TYPES.NUMBER, label: '10' }));
-            cards.push(...Array(2).fill({ value: 15, type: CARD_TYPES.NUMBER, label: '15' }));
-            cards.push(...Array(1).fill({ value: 20, type: CARD_TYPES.NUMBER, label: '20' }));
-            cards.push(...Array(3).fill({ value: 0, type: CARD_TYPES.NUMBER, label: '0' })); 
-            cards.push(...Array(2).fill({ value: -5, type: CARD_TYPES.CAVALRY, label: '-5' }));
-            cards.push(...Array(1).fill({ value: -10, type: CARD_TYPES.CAVALRY, label: '-10' }));
-            cards.push({ value: 0, type: CARD_TYPES.NIGHT, label: 'シャッフル 0' });
-            cards.push({ value: 0, type: CARD_TYPES.CHIEF, label: '×2' });
-            cards.push({ value: 0, type: CARD_TYPES.FOX, label: 'MAX→0' });
-            cards.push({ value: 0, type: CARD_TYPES.CAVE, label: '?' });
-            return cards.map((c, i) => ({ ...c, id: `card-${i}-${Math.random()}` }));
-        };
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+        const COLLECTION_ID = "coyote-v2";
 
-        const shuffle = (array) => {
-            const newArray = [...array];
-            for (let i = newArray.length - 1; i > 0; i--) {
-                const j = Math.floor(Math.random() * (i + 1));
-                [newArray[i], newArray[j]] = [newArray[j], newArray[i]];
-            }
-            return newArray;
-        };
+        // --- Constants ---
+        const DECK_DEFINITION = [
+            { value: -10, count: 1 }, { value: -5, count: 2 }, { value: 0, count: 3 },
+            { value: 1, count: 4 }, { value: 2, count: 4 }, { value: 3, count: 4 }, { value: 4, count: 4 },
+            { value: 5, count: 4 }, { value: 10, count: 3 }, { value: 15, count: 2 }, { value: 20, count: 1 },
+            { type: 'x2', count: 1 }, { type: 'max0', count: 1 }, { type: '?', count: 1 }, { type: 'night', count: 1 }
+        ];
 
-        const calculateTotal = (visibleCards, deck) => {
-            let steps = [];
-            let currentCards = [...visibleCards];
-            let remainingDeck = [...deck];
-
-            if (currentCards.some(c => c.type === CARD_TYPES.CAVE)) {
-                if (remainingDeck.length > 0) {
-                    const caveAddedCard = remainingDeck.shift();
-                    currentCards.push(caveAddedCard);
-                    steps.push(`ほらあな(?): 山札から ${caveAddedCard.label} を追加`);
-                } else {
-                    steps.push(`ほらあな(?): 山札が空です`);
+        const generateDeck = () => {
+            const deck = [];
+            DECK_DEFINITION.forEach(item => {
+                for (let i = 0; i < item.count; i++) {
+                    deck.push({ ...item, id: Math.random().toString(36).substr(2, 9) });
                 }
-            }
-
-            if (currentCards.some(c => c.type === CARD_TYPES.FOX)) {
-                let maxVal = -Infinity;
-                let targetIdx = -1;
-                currentCards.forEach((c, i) => {
-                    const val = (c.type === CARD_TYPES.NUMBER || c.type === CARD_TYPES.CAVALRY) ? c.value : 0;
-                    if (val > maxVal) { maxVal = val; targetIdx = i; }
-                });
-                if (targetIdx !== -1) {
-                    steps.push(`キツネ(MAX→0): 最大値 ${currentCards[targetIdx].label} を 0 化`);
-                    currentCards[targetIdx] = { ...currentCards[targetIdx], value: 0, label: '0(キツネ)', isFoxed: true };
-                }
-            }
-
-            let sum = 0;
-            currentCards.forEach(c => { sum += (c.value || 0); });
-            steps.push(`基本合計: ${sum}`);
-
-            if (currentCards.some(c => c.type === CARD_TYPES.CHIEF)) {
-                sum *= 2;
-                steps.push(`酋長(×2): 合計を2倍にして ${sum}`);
-            }
-
-            return { total: sum, steps, nightExists: currentCards.some(c => c.type === CARD_TYPES.NIGHT), remainingDeck };
+            });
+            return deck.sort(() => Math.random() - 0.5);
         };
 
-        // --- UI Components ---
-        const DrumRollSelector = ({ minVal, maxVal, onSelect }) => {
-            const scrollRef = useRef(null);
-            const itemHeight = 64; 
-            const [activeIndex, setActiveIndex] = useState(0);
-
-            const options = useMemo(() => {
-                const arr = [];
-                for (let i = minVal; i <= maxVal; i++) arr.push(i);
-                return arr;
-            }, [minVal, maxVal]);
-
-            const handleScroll = () => {
-                if (!scrollRef.current) return;
-                const scrollTop = scrollRef.current.scrollTop;
-                const index = Math.round(scrollTop / itemHeight);
-                if (index >= 0 && index < options.length) {
-                    setActiveIndex(index);
-                    onSelect(options[index]);
-                }
-            };
-
-            return (
-                <div className="relative w-40 h-[320px] bg-slate-900 rounded-[32px] overflow-hidden border-4 border-indigo-500/30 shadow-2xl">
-                    <div className="absolute top-1/2 left-0 right-0 h-16 -translate-y-1/2 bg-indigo-500/20 border-y-2 border-indigo-500/50 pointer-events-none z-10" />
-                    <div className="absolute inset-0 pointer-events-none z-20 bg-gradient-to-b from-slate-950 via-transparent to-slate-950" />
-                    <div ref={scrollRef} onScroll={handleScroll} className="w-full h-full overflow-y-scroll no-scrollbar snap-y snap-mandatory">
-                        <div style={{ height: `${itemHeight * 2}px` }} />
-                        {options.map((val, i) => (
-                            <div key={val} className={`h-16 flex items-center justify-center text-4xl font-black transition-all duration-200 snap-center ${i === activeIndex ? 'text-white scale-125' : 'text-slate-600 opacity-30'}`}>
-                                {val}
-                            </div>
-                        ))}
-                        <div style={{ height: `${itemHeight * 2}px` }} />
-                    </div>
-                </div>
-            );
+        const calculateTotal = (cards) => {
+            let values = cards.map(c => c.value || 0);
+            let specials = cards.map(c => c.type).filter(Boolean);
+            if (specials.includes('max0')) {
+                const max = Math.max(...values);
+                const idx = values.indexOf(max);
+                if (idx > -1) values[idx] = 0;
+            }
+            let total = values.reduce((a, b) => a + b, 0);
+            if (specials.includes('x2')) total *= 2;
+            return total;
         };
 
-        const Card = ({ card, isHidden, isOwner }) => {
-            if (!card) return <div className="w-20 h-28 md:w-24 md:h-36 bg-slate-800 rounded-2xl border-2 border-dashed border-slate-700"></div>;
-            
-            const getCardColor = () => {
-                if (isHidden) return 'bg-indigo-600 border-indigo-400';
-                if (card.type === CARD_TYPES.NUMBER) return 'bg-white border-slate-200';
-                if (card.type === CARD_TYPES.CAVALRY) return 'bg-rose-100 border-rose-300';
-                return 'bg-amber-100 border-amber-300';
-            };
-
-            const renderContent = () => {
-                if (card.type === CARD_TYPES.FOX) {
-                    return (
-                        <div className="flex flex-col items-center justify-center leading-tight">
-                            <div className="text-xl font-black text-slate-900">MAX</div>
-                            <div className="text-lg font-black text-slate-400">↓</div>
-                            <div className="text-3xl font-black text-slate-900">0</div>
-                        </div>
-                    );
-                }
-                return <div className={`text-3xl md:text-4xl font-black text-center leading-none ${card.value < 0 ? 'text-rose-600' : 'text-slate-900'}`}>{card.label}</div>;
-            };
-
-            return (
-                <div className={`relative w-20 h-28 md:w-24 md:h-36 rounded-2xl shadow-xl flex flex-col items-center justify-center p-3 border-4 transition-all ${getCardColor()}`}>
-                    {isHidden ? (
-                        <div className="text-white font-black text-center">
-                            <div className="text-xs opacity-50 mb-1 tracking-tighter italic">COYOTE</div>
-                            <div className="text-4xl">?</div>
-                            {isOwner && <div className="text-[8px] mt-2 text-indigo-200 leading-tight">自分は内緒</div>}
-                        </div>
-                    ) : (
-                        <>
-                            {renderContent()}
-                            <div className="text-[8px] text-slate-500 font-black mt-2 uppercase tracking-widest text-center opacity-70">
-                                {card.type === CARD_TYPES.NUMBER ? 'COYOTE' : card.type === CARD_TYPES.CAVALRY ? 'SOLDIER' : 'SPECIAL'}
-                            </div>
-                        </>
-                    )}
-                </div>
-            );
+        // --- Icons ---
+        const Icon = ({ name, size = 24, className = "" }) => {
+            useEffect(() => { lucide.createIcons(); }, [name]);
+            return <i data-lucide={name} style={{ width: size, height: size }} className={className}></i>;
         };
 
         // --- Main App ---
-        function CoyoteApp() {
-            const [user, setUser] = useState({uid: 'user-1', name: 'You'});
-            const [view, setView] = useState('home'); 
-            const [gameState, setGameState] = useState(null);
-            const [playerCountSetting, setPlayerCountSetting] = useState(3);
-            const [selectedDeclaration, setSelectedDeclaration] = useState(1);
+        function App() {
+            const [user, setUser] = useState(null);
+            const [room, setRoom] = useState(null);
+            const [loading, setLoading] = useState(true);
+            const [roomIdInput, setRoomIdInput] = useState('');
+            const [declaredValue, setDeclaredValue] = useState(0);
+            const [message, setMessage] = useState('');
 
-            // CPU Logic
+            // Auth
             useEffect(() => {
-                if (gameState && gameState.status === 'playing') {
-                    const currentPlayer = gameState.players[gameState.currentTurnIndex];
-                    if (currentPlayer?.uid.startsWith('cpu-')) {
-                        const timer = setTimeout(() => {
-                            const otherCards = gameState.players
-                                .filter((_, idx) => idx !== gameState.currentTurnIndex && gameState.players[idx].lives > 0)
-                                .map(p => p.card);
-                            const { total: visibleTotal } = calculateTotal(otherCards, []);
-                            const estimatedTotal = visibleTotal + 5;
-                            if (gameState.currentDeclaration >= estimatedTotal) handleCoyote();
-                            else handleDeclare(gameState.currentDeclaration + (Math.random() > 0.8 ? 2 : 1));
-                        }, 1500);
-                        return () => clearTimeout(timer);
+                const unsub = onAuthStateChanged(auth, async (u) => {
+                    if (u) {
+                        setUser(u);
+                        // Check URL for direct room link
+                        const params = new URLSearchParams(window.location.search);
+                        const rId = params.get('room');
+                        if (rId && !room) joinRoom(rId, u);
+                    } else {
+                        await signInAnonymously(auth);
                     }
-                }
-            }, [gameState?.currentTurnIndex, gameState?.status]);
-
-            const startLocalGame = () => {
-                let deck = shuffle(GET_FULL_DECK());
-                const players = [{ uid: user.uid, name: 'You', lives: 3, card: deck.pop() }];
-                for (let i = 1; i < playerCountSetting; i++) {
-                    players.push({ uid: `cpu-${i}`, name: `CPU ${i}`, lives: 3, card: deck.pop() });
-                }
-                setGameState({
-                    status: 'playing', players, deck, discardPile: [], currentTurnIndex: 0, currentDeclaration: 0, maxPlayers: playerCountSetting, nightShuffled: false
+                    setLoading(false);
                 });
-                setSelectedDeclaration(1);
-                setView('game');
+                return () => unsub();
+            }, []);
+
+            // Room Sync
+            useEffect(() => {
+                if (!user || !room?.id) return;
+                const unsub = onSnapshot(doc(db, 'artifacts', COLLECTION_ID, 'public', 'data', 'rooms', room.id), (snap) => {
+                    if (snap.exists()) setRoom({ id: snap.id, ...snap.data() });
+                });
+                return () => unsub();
+            }, [user, room?.id]);
+
+            const createRoom = async () => {
+                const id = Math.floor(100000 + Math.random() * 900000).toString();
+                const roomData = {
+                    hostId: user.uid,
+                    status: 'waiting',
+                    players: [{ uid: user.uid, name: `Player_${user.uid.slice(0, 3)}`, hp: 3 }],
+                    deck: generateDeck(),
+                    currentTurn: 0,
+                    currentValue: 0,
+                    lastAction: 'created'
+                };
+                await setDoc(doc(db, 'artifacts', COLLECTION_ID, 'public', 'data', 'rooms', id), roomData);
+                setRoom({ id, ...roomData });
+                window.history.pushState({}, '', `?room=${id}`);
             };
 
-            const handleDeclare = (val) => {
-                let next = (gameState.currentTurnIndex + 1) % gameState.players.length;
-                while(gameState.players[next].lives <= 0) next = (next + 1) % gameState.players.length;
-                setGameState({...gameState, currentDeclaration: val, currentTurnIndex: next});
-                setSelectedDeclaration(val + 1);
+            const joinRoom = async (id, u = user) => {
+                const rRef = doc(db, 'artifacts', COLLECTION_ID, 'public', 'data', 'rooms', id || roomIdInput);
+                const snap = await getDoc(rRef);
+                if (!snap.exists()) return alert("Room not found");
+                const data = snap.data();
+                if (data.players.some(p => p.uid === u.uid)) {
+                    setRoom({ id: snap.id, ...data });
+                } else {
+                    const players = [...data.players, { uid: u.uid, name: `Player_${u.uid.slice(0, 3)}`, hp: 3 }];
+                    await updateDoc(rRef, { players });
+                    setRoom({ id: snap.id, ...data, players });
+                }
+                window.history.pushState({}, '', `?room=${snap.id}`);
             };
 
-            const handleCoyote = () => {
-                const activeCards = gameState.players.filter(p => p.lives > 0).map(p => p.card);
-                const { total, steps, nightExists, remainingDeck } = calculateTotal(activeCards, gameState.deck);
-                const dec = gameState.currentDeclaration;
-                let prev = (gameState.currentTurnIndex - 1 + gameState.players.length) % gameState.players.length;
-                while(gameState.players[prev].lives <= 0) prev = (prev - 1 + gameState.players.length) % gameState.players.length;
-                
-                const loserIdx = dec > total ? prev : gameState.currentTurnIndex;
-                const players = [...gameState.players];
-                players[loserIdx].lives -= 1;
-                
-                setGameState({ 
-                    ...gameState, 
-                    status: 'result', 
-                    players, 
-                    deck: remainingDeck, 
-                    resultData: { 
-                        total, 
-                        message: dec > total ? `大成功！ ${total} < ${dec}` : `ドボン！ ${total} >= ${dec}`, 
-                        steps 
-                    }, 
-                    nightShuffled: nightExists 
+            const startGame = async () => {
+                const deck = [...room.deck];
+                const players = room.players.map(p => ({ ...p, currentCard: deck.pop() }));
+                await updateDoc(doc(db, 'artifacts', COLLECTION_ID, 'public', 'data', 'rooms', room.id), {
+                    status: 'playing', players, deck, currentTurn: 0, currentValue: 0
                 });
             };
 
-            const nextRound = () => {
-                const survivors = gameState.players.filter(p => p.lives > 0);
-                if (survivors.length === 1) {
-                    setGameState({ ...gameState, status: 'winner', winner: survivors[0] });
-                    return;
-                }
-
-                let players = [...gameState.players];
-                let deck = [...gameState.deck];
-                let discardPile = [...(gameState.discardPile || [])];
-                players.forEach(p => { if (p.card) discardPile.push(p.card); });
-                
-                if (gameState.nightShuffled || deck.length < players.length + 2) {
-                    deck = shuffle([...discardPile, ...deck]);
-                    discardPile = [];
-                }
-                players = players.map(p => (p.lives > 0 ? { ...p, card: deck.pop() } : { ...p, card: null }));
-                setGameState({ ...gameState, status: 'playing', deck, discardPile, players, currentDeclaration: 0, currentTurnIndex: players.findIndex(p => p.lives > 0), resultData: null, nightShuffled: false });
-                setSelectedDeclaration(1);
+            const handleDeclare = async () => {
+                if (declaredValue <= room.currentValue) return alert("前回の宣言より大きい数字にしてください");
+                await updateDoc(doc(db, 'artifacts', COLLECTION_ID, 'public', 'data', 'rooms', room.id), {
+                    currentValue: declaredValue,
+                    currentTurn: (room.currentTurn + 1) % room.players.length
+                });
             };
+
+            const handleCoyote = async () => {
+                const cards = room.players.map(p => p.currentCard);
+                const total = calculateTotal(cards);
+                const resultMessage = `合計は ${total} でした！`;
+                const isSuccess = room.currentValue > total;
+                const loserIdx = isSuccess ? (room.currentTurn - 1 + room.players.length) % room.players.length : room.currentTurn;
+                
+                const newPlayers = room.players.map((p, i) => i === loserIdx ? { ...p, hp: p.hp - 1 } : p);
+                
+                await updateDoc(doc(db, 'artifacts', COLLECTION_ID, 'public', 'data', 'rooms', room.id), {
+                    status: 'result',
+                    lastResult: { total, claimed: room.currentValue, loserName: room.players[loserIdx].name },
+                    players: newPlayers
+                });
+            };
+
+            if (loading) return <div className="h-screen flex items-center justify-center font-black italic animate-pulse">CONNECTING...</div>;
+
+            if (!room) return (
+                <div className="h-full flex flex-col items-center justify-center p-6 space-y-12">
+                    <div className="text-center space-y-2">
+                        <h1 className="text-6xl font-black italic tracking-tighter">COYOTE</h1>
+                        <p className="text-indigo-400 font-bold tracking-widest text-xs uppercase">Online Battle</p>
+                    </div>
+                    
+                    <div className="w-full max-w-xs space-y-4">
+                        <button onClick={createRoom} className="w-full py-5 bg-indigo-600 rounded-2xl font-black italic text-xl shadow-lg shadow-indigo-500/20 active:scale-95 transition-transform">
+                            CREATE ROOM
+                        </button>
+                        <div className="relative flex items-center">
+                            <div className="flex-grow border-t border-slate-800"></div>
+                            <span className="px-4 text-xs font-bold text-slate-600">OR</span>
+                            <div className="flex-grow border-t border-slate-800"></div>
+                        </div>
+                        <div className="bg-slate-900 p-4 rounded-2xl border border-slate-800 space-y-3">
+                            <input 
+                                placeholder="ROOM ID (6 digits)" 
+                                className="w-full bg-slate-800 border-none rounded-xl py-3 px-4 text-center font-mono text-xl focus:ring-2 focus:ring-indigo-500 outline-none"
+                                value={roomIdInput}
+                                onChange={e => setRoomIdInput(e.target.value)}
+                            />
+                            <button onClick={() => joinRoom()} className="w-full py-3 bg-white text-slate-950 rounded-xl font-bold active:scale-95 transition-transform">
+                                JOIN
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            );
+
+            const isMyTurn = room.players[room.currentTurn]?.uid === user.uid;
 
             return (
-                <div className="min-h-screen pb-20">
-                    <header className="p-6 flex justify-between items-center max-w-6xl mx-auto border-b border-white/5 mb-8">
-                        <div className="flex items-center gap-3">
-                            <div className="bg-indigo-600 p-2 rounded-xl shadow-lg shadow-indigo-600/20 text-white">
-                                <IconMoon />
-                            </div>
-                            <h1 className="text-3xl font-black bg-gradient-to-br from-indigo-400 to-purple-500 bg-clip-text text-transparent italic tracking-tighter">COYOTE</h1>
+                <div className="h-full flex flex-col">
+                    <header className="p-4 flex justify-between items-center border-b border-slate-900">
+                        <div className="flex items-center gap-2">
+                            <Icon name="gamepad-2" size={18} className="text-indigo-500" />
+                            <span className="font-black italic text-sm">ROOM: {room.id}</span>
                         </div>
-                        {view !== 'home' && (
-                            <button onClick={() => { setView('home'); setGameState(null); }} className="bg-slate-900 border border-slate-700 px-6 py-2 rounded-full text-xs font-black hover:bg-slate-800 transition-all">EXIT</button>
-                        )}
+                        <button onClick={() => {
+                            const url = window.location.href;
+                            navigator.clipboard.writeText(url);
+                            alert("招待URLをコピーしました！友だちに送ってください。");
+                        }} className="text-[10px] font-bold bg-indigo-600/20 text-indigo-400 px-3 py-1 rounded-full border border-indigo-500/30">
+                            INVITE FRIENDS
+                        </button>
                     </header>
 
-                    <main className="p-4 max-w-7xl mx-auto">
-                        {view === 'home' && (
-                            <div className="flex flex-col items-center gap-10 mt-10 animate-zoom-in">
-                                <div className="bg-slate-900/50 border border-slate-800 p-8 rounded-[40px] w-full max-w-xl text-center">
-                                    <div className="text-indigo-400 uppercase text-[10px] font-black tracking-widest mb-6">Player Count</div>
-                                    <div className="flex items-center justify-center gap-10">
-                                        <button onClick={() => playerCountSetting > 2 && setPlayerCountSetting(p => p - 1)} className="w-16 h-16 rounded-3xl bg-slate-800 flex items-center justify-center hover:bg-slate-700 transition-all"><IconMinus /></button>
-                                        <div className="text-8xl font-black text-white">{playerCountSetting}</div>
-                                        <button onClick={() => playerCountSetting < 10 && setPlayerCountSetting(p => p + 1)} className="w-16 h-16 rounded-3xl bg-slate-800 flex items-center justify-center hover:bg-slate-700 transition-all"><IconPlus /></button>
-                                    </div>
-                                </div>
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 w-full max-w-4xl">
-                                    <button onClick={startLocalGame} className="bg-emerald-600 hover:bg-emerald-500 p-8 rounded-[32px] font-black text-2xl text-left transition-all flex items-center gap-6"><IconCpu size={40}/> CPU対戦を開始</button>
-                                    <button className="bg-indigo-600 hover:bg-indigo-500 p-8 rounded-[32px] font-black text-2xl text-left transition-all flex items-center gap-6 opacity-50 cursor-not-allowed"><IconUsers size={40}/> オンライン(開発中)</button>
+                    <main className="flex-grow relative flex flex-col items-center justify-center p-4">
+                        {/* Table Area */}
+                        <div className="w-full aspect-square max-w-sm relative bg-slate-900/20 rounded-full border border-slate-900 flex items-center justify-center">
+                            <div className="text-center z-10">
+                                <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Current Claim</p>
+                                <div className="text-8xl font-black italic text-white drop-shadow-2xl">{room.currentValue}</div>
+                                <div className="mt-2 bg-indigo-600/20 text-indigo-400 px-4 py-1 rounded-full text-[10px] font-bold border border-indigo-500/20">
+                                    {room.players[room.currentTurn]?.name}'s turn
                                 </div>
                             </div>
-                        )}
 
-                        {view === 'game' && gameState && (
-                            <div className="space-y-12">
-                                <div className="flex flex-wrap justify-center gap-6">
-                                    {gameState.players.map((p, i) => (
-                                        <div key={i} className={`p-4 rounded-3xl border-2 transition-all flex flex-col items-center min-w-[120px] ${i === gameState.currentTurnIndex && gameState.status === 'playing' ? 'border-indigo-500 bg-indigo-500/10 scale-110 shadow-2xl' : 'border-slate-800 bg-slate-900'} ${p.lives <= 0 ? 'opacity-20 grayscale' : ''}`}>
-                                            <div className="text-[10px] font-black mb-3 text-slate-400">{p.name}</div>
-                                            <Card card={p.card} isHidden={p.uid === user.uid && gameState.status === 'playing'} isOwner={p.uid === user.uid} />
-                                            <div className="flex gap-1 mt-4">
-                                                {Array.from({ length: 3 }).map((_, li) => (
-                                                    <div key={li} className={`w-3 h-3 rounded-full ${li < p.lives ? 'bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.6)]' : 'bg-slate-800'}`}></div>
+                            {/* Players around table */}
+                            {room.players.map((p, idx) => {
+                                const angle = (idx / room.players.length) * 2 * Math.PI - (Math.PI / 2);
+                                const radius = 140; 
+                                const x = Math.cos(angle) * radius;
+                                const y = Math.sin(angle) * radius;
+                                const isMe = p.uid === user.uid;
+                                
+                                return (
+                                    <div key={p.uid} className="absolute transition-all duration-500" style={{ transform: `translate(${x}px, ${y}px)` }}>
+                                        <div className="flex flex-col items-center">
+                                            <div className={`w-14 h-20 sm:w-16 sm:h-24 rounded-xl border-2 flex items-center justify-center text-xl font-black card-shadow transition-all ${
+                                                room.status === 'result' || !isMe ? 'bg-white text-slate-900 border-white' : 'bg-indigo-600 border-indigo-400'
+                                            }`}>
+                                                {(room.status === 'result' || !isMe) ? (
+                                                    p.currentCard?.type === 'x2' ? '×2' : p.currentCard?.value ?? '?'
+                                                ) : (
+                                                    <span className="text-[8px] text-white/50 text-center px-1">YOUR<br/>HEAD</span>
+                                                )}
+                                            </div>
+                                            <span className={`mt-2 text-[9px] font-bold uppercase ${isMe ? 'text-indigo-400' : 'text-slate-500'}`}>{p.name}</span>
+                                            <div className="flex gap-0.5 mt-1">
+                                                {[...Array(3)].map((_, i) => (
+                                                    <div key={i} className={`w-1.5 h-1.5 rounded-full ${i < p.hp ? 'bg-red-500' : 'bg-slate-800'}`}></div>
                                                 ))}
                                             </div>
                                         </div>
-                                    ))}
-                                </div>
-
-                                <div className="flex flex-col md:flex-row items-center justify-center gap-8 py-6 bg-black/30 rounded-[48px] border border-white/5">
-                                    <div className="text-center">
-                                        <div className="w-24 h-32 bg-indigo-900 rounded-2xl border-2 border-indigo-400/50 flex flex-col items-center justify-center shadow-lg mb-2">
-                                            <IconLayers size={24} className="text-indigo-400 mb-1 opacity-50" />
-                                            <div className="text-3xl font-black text-white">{gameState.deck.length}</div>
-                                        </div>
-                                        <span className="text-[10px] font-black text-indigo-400 tracking-widest uppercase">山札</span>
                                     </div>
-                                    <div className="text-center">
-                                        <div className="w-24 h-32 bg-slate-900 rounded-2xl border-2 border-slate-700/50 flex flex-col items-center justify-center shadow-lg mb-2">
-                                            <IconTrash size={24} className="text-slate-700 mb-1 opacity-50" />
-                                            <div className="text-3xl font-black text-slate-500">{gameState.discardPile?.length || 0}</div>
-                                        </div>
-                                        <span className="text-[10px] font-black text-slate-600 tracking-widest uppercase">捨て札</span>
+                                );
+                            })}
+                        </div>
+
+                        {/* Controls */}
+                        <div className="w-full max-w-md mt-auto pt-8 pb-4">
+                            {room.status === 'waiting' && room.hostId === user.uid && (
+                                <button onClick={startGame} className="w-full py-5 bg-indigo-600 rounded-2xl font-black text-xl shadow-xl shadow-indigo-600/30">
+                                    START GAME
+                                </button>
+                            )}
+
+                            {room.status === 'playing' && isMyTurn && (
+                                <div className="space-y-4 animate-in slide-in-from-bottom duration-300">
+                                    <div className="flex items-center justify-center gap-8 bg-slate-900 p-4 rounded-3xl border border-slate-800">
+                                        <button onClick={() => setDeclaredValue(v => Math.max(room.currentValue + 1, v - 1))} className="p-4 bg-slate-800 rounded-2xl text-white">
+                                            <Icon name="chevron-down" />
+                                        </button>
+                                        <div className="text-5xl font-black italic w-20 text-center">{declaredValue || room.currentValue + 1}</div>
+                                        <button onClick={() => setDeclaredValue(v => Math.max(room.currentValue + 1, v + 1))} className="p-4 bg-slate-800 rounded-2xl text-white">
+                                            <Icon name="chevron-up" />
+                                        </button>
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <button onClick={handleDeclare} className="py-5 bg-indigo-600 rounded-2xl font-black text-xl italic shadow-lg">RAISE</button>
+                                        <button onClick={handleCoyote} className="py-5 bg-red-600 rounded-2xl font-black text-xl italic shadow-lg">COYOTE!</button>
                                     </div>
                                 </div>
+                            )}
 
-                                <div className="max-w-4xl mx-auto">
-                                    {gameState.status === 'playing' ? (
-                                        gameState.players[gameState.currentTurnIndex]?.uid === user.uid ? (
-                                            <div className="bg-slate-900 p-10 rounded-[48px] border-4 border-indigo-500 shadow-2xl animate-zoom-in">
-                                                <div className="flex flex-col md:flex-row items-center gap-12">
-                                                    <DrumRollSelector minVal={gameState.currentDeclaration + 1} maxVal={150} onSelect={setSelectedDeclaration} />
-                                                    <div className="flex-1 w-full space-y-8">
-                                                        <div className="bg-black/40 p-6 rounded-3xl border border-white/5 text-center">
-                                                            <div className="text-xs text-slate-500 font-black uppercase tracking-widest mb-2">現在の最高宣言</div>
-                                                            <div className="text-7xl font-black text-white">{gameState.currentDeclaration}</div>
-                                                        </div>
-                                                        <div className="grid grid-cols-1 gap-4">
-                                                            <button onClick={() => handleDeclare(selectedDeclaration)} className="bg-indigo-600 hover:bg-indigo-500 text-white py-6 rounded-3xl font-black text-3xl shadow-2xl transition-all active:scale-95 italic">
-                                                                {selectedDeclaration} を宣言！
-                                                            </button>
-                                                            {gameState.currentDeclaration > 0 && (
-                                                                <button onClick={handleCoyote} className="bg-rose-600/10 text-rose-500 border-2 border-rose-600/30 hover:bg-rose-600 hover:text-white py-4 rounded-3xl font-black text-lg transition-all">
-                                                                    コヨーテ！
-                                                                </button>
-                                                            )}
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        ) : (
-                                            <div className="text-center p-20 bg-slate-900/40 rounded-[64px] border-4 border-dashed border-slate-800">
-                                                <div className="text-sm font-black text-slate-500 uppercase tracking-[0.3em] mb-4 animate-pulse">Waiting for Player</div>
-                                                <div className="text-2xl font-black text-white mb-8">{gameState.players[gameState.currentTurnIndex]?.name} のターン</div>
-                                                <div className="text-[10px] text-slate-600 font-black uppercase tracking-widest mb-2">現在の宣言</div>
-                                                <div className="text-8xl font-black text-slate-800">{gameState.currentDeclaration}</div>
-                                            </div>
-                                        )
-                                    ) : gameState.status === 'result' ? (
-                                        <div className="bg-slate-900 p-10 rounded-[48px] border-4 border-white/10 shadow-2xl text-center animate-zoom-in">
-                                            <h2 className="text-5xl font-black text-white italic mb-6">{gameState.resultData.message}</h2>
-                                            <div className="text-[10px] font-black text-indigo-400 uppercase tracking-widest mb-2">実際の合計値</div>
-                                            <div className="text-8xl font-black text-white mb-10">{gameState.resultData.total}</div>
-                                            <div className="bg-black/40 p-6 rounded-3xl mb-10 space-y-2">
-                                                {gameState.resultData.steps.map((s, i) => (
-                                                    <div key={i} className="text-slate-400 font-bold flex items-center justify-center gap-2 text-sm"><IconChevronRight size={14}/> {s}</div>
-                                                ))}
-                                            </div>
-                                            <button onClick={nextRound} className="w-full bg-white text-slate-950 py-6 rounded-3xl font-black text-2xl hover:bg-indigo-50 transition-all">
-                                                {gameState.players.filter(p => p.lives > 0).length === 1 ? '優勝者を確認する' : '次のラウンドへ'}
-                                            </button>
-                                        </div>
-                                    ) : gameState.status === 'winner' ? (
-                                        <div className="fixed inset-0 z-50 bg-slate-950/95 flex flex-col items-center justify-center p-6 animate-zoom-in">
-                                            <div className="relative mb-12 flex flex-col items-center">
-                                                <IconTrophy size={180} />
-                                                <div className="absolute -top-10 -left-10 w-20 h-20 bg-amber-400/20 rounded-full blur-3xl animate-pulse"></div>
-                                            </div>
-                                            <div className="text-center space-y-4">
-                                                <div className="text-4xl md:text-5xl font-black text-indigo-400 uppercase tracking-widest">Congratulations!</div>
-                                                <h2 className="text-[100px] md:text-[140px] font-black text-white italic tracking-tighter leading-none py-6">{gameState.winner?.name}</h2>
-                                                <div className="text-5xl md:text-7xl font-black bg-gradient-to-r from-amber-400 to-amber-500 bg-clip-text text-transparent italic tracking-tighter">優勝！おめでとう</div>
-                                            </div>
-                                            <button onClick={() => setView('home')} className="mt-20 bg-white text-slate-950 px-20 py-8 rounded-full font-black text-3xl hover:scale-110 active:scale-95 transition-all">トップへ戻る</button>
-                                        </div>
-                                    ) : null}
+                            {room.status === 'result' && (
+                                <div className="bg-white text-slate-950 p-6 rounded-3xl space-y-4 animate-in zoom-in duration-300">
+                                    <div className="text-center">
+                                        <p className="text-[10px] font-black uppercase text-slate-400">Round Result</p>
+                                        <h2 className="text-4xl font-black italic">TOTAL: {room.lastResult?.total}</h2>
+                                        <p className="mt-2 font-bold text-sm">{room.lastResult?.loserName} lost a life!</p>
+                                    </div>
+                                    <button 
+                                        onClick={() => updateDoc(doc(db, 'artifacts', COLLECTION_ID, 'public', 'data', 'rooms', room.id), { status: 'playing', currentValue: 0, deck: generateDeck(), players: room.players.map(p => ({...p, currentCard: generateDeck().pop()})) })}
+                                        className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-black italic"
+                                    >
+                                        NEXT ROUND
+                                    </button>
                                 </div>
-                            </div>
-                        )}
+                            )}
+                        </div>
                     </main>
                 </div>
             );
         }
 
         const root = ReactDOM.createRoot(document.getElementById('root'));
-        root.render(<CoyoteApp />);
+        root.render(<App />);
     </script>
 </body>
 </html>
