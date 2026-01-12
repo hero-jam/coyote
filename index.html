@@ -4,292 +4,489 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Online Coyote Pro</title>
-    <!-- CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap');
-        body { font-family: 'Inter', sans-serif; -webkit-tap-highlight-color: transparent; background-color: #020617; color: #f8fafc; }
-        .no-scrollbar::-webkit-scrollbar { display: none; }
-        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
-        #root { min-height: 100vh; }
-    </style>
-    <!-- Firebase SDK (ESM) -->
-    <script type="importmap">
-    {
-      "imports": {
-        "firebase/app": "https://www.gstatic.com/firebasejs/11.1.0/firebase-app.js",
-        "firebase/auth": "https://www.gstatic.com/firebasejs/11.1.0/firebase-auth.js",
-        "firebase/firestore": "https://www.gstatic.com/firebasejs/11.1.0/firebase-firestore.js"
-      }
-    }
-    </script>
-    <!-- Libraries (CDN) -->
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&family=Noto+Sans+JP:wght@400;700;900&display=swap');
+        body { font-family: 'Inter', 'Noto Sans JP', sans-serif; -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        @keyframes float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-10px); } }
+        .float { animation: float 3s ease-in-out infinite; }
+        @keyframes celebrate {
+            0% { transform: scale(0.5); opacity: 0; }
+            50% { transform: scale(1.1); opacity: 1; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+        .celebrate-anim { animation: celebrate 0.8s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; }
+        .glass-panel { background: rgba(30, 41, 59, 0.7); backdrop-filter: blur(12px); border: 1px solid rgba(255, 255, 255, 0.1); }
+    </style>
 </head>
-<body class="overflow-hidden fixed inset-0">
-    <div id="root"></div>
+<body class="bg-slate-950 text-slate-100 overflow-hidden fixed inset-0">
+    <div id="root" class="h-full w-full"></div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, getDoc, updateDoc, onSnapshot, collection, query, where } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Global check for config
+        const firebaseConfig = typeof __firebase_config !== 'undefined' 
+            ? JSON.parse(__firebase_config) 
+            : {
+                apiKey: "AIzaSyCq9rT0N5X7HoCb-OZlBNEtyEAcjuTTDEA",
+                authDomain: "hero-tablegames.firebaseapp.com",
+                projectId: "hero-tablegames",
+                storageBucket: "hero-tablegames.firebasestorage.app",
+                messagingSenderId: "674602265882",
+                appId: "1:674602265882:web:13b2cbabe692f44c7890a3"
+            };
+
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+
+        window.FB = { 
+            auth, db, initializeApp, getAuth, signInAnonymously, signInWithCustomToken, 
+            onAuthStateChanged, getFirestore, doc, setDoc, getDoc, 
+            updateDoc, onSnapshot, collection, query, where 
+        };
+
+        window.dispatchEvent(new CustomEvent('firebase-ready'));
+    </script>
 
     <script type="text/babel">
-        const { useState, useEffect, useCallback, useRef } = React;
-        
-        let firebase_app, firebase_auth, firebase_firestore;
-        
-        // Dynamic Import for Firebase to handle environments
-        const initFirebase = async () => {
-            const { initializeApp } = await import("firebase/app");
-            const { getAuth, signInAnonymously, onAuthStateChanged } = await import("firebase/auth");
-            const { getFirestore, doc, setDoc, getDoc, updateDoc, onSnapshot, serverTimestamp } = await import("firebase/firestore");
-            return { initializeApp, getAuth, signInAnonymously, onAuthStateChanged, getFirestore, doc, setDoc, getDoc, updateDoc, onSnapshot, serverTimestamp };
-        };
+        const { useState, useEffect, useMemo, useRef } = React;
 
-        const firebaseConfig = {
-            apiKey: "AIzaSyCq9rT0N5X7HoCb-OZlBNEtyEAcjuTTDEA",
-            authDomain: "hero-tablegames.firebaseapp.com",
-            projectId: "hero-tablegames",
-            storageBucket: "hero-tablegames.firebasestorage.app",
-            messagingSenderId: "674602265882",
-            appId: "1:674602265882:web:13b2cbabe692f44c7890a3"
-        };
-
-        const COLLECTION_ID = "coyote-pro-v1";
-
-        // --- Game Utils ---
-        const DECK_DEFINITION = [
-            { value: -10, count: 1 }, { value: -5, count: 2 }, { value: 0, count: 3 },
-            { value: 1, count: 4 }, { value: 2, count: 4 }, { value: 3, count: 4 }, { value: 4, count: 4 },
-            { value: 5, count: 4 }, { value: 10, count: 3 }, { value: 15, count: 2 }, { value: 20, count: 1 },
-            { type: 'x2', count: 1 }, { type: 'max0', count: 1 }, { type: '?', count: 1 }, { type: 'night', count: 1 }
-        ];
-
-        const generateDeck = () => {
-            const deck = [];
-            DECK_DEFINITION.forEach(item => {
-                for (let i = 0; i < item.count; i++) {
-                    deck.push({ ...item, id: Math.random().toString(36).substr(2, 9) });
-                }
-            });
-            return deck.sort(() => Math.random() - 0.5);
-        };
-
-        const calculateTotal = (cards) => {
-            let values = cards.map(c => c.value || 0);
-            let specials = cards.map(c => c.type).filter(Boolean);
-            if (specials.includes('max0')) {
-                const max = Math.max(...values);
-                const idx = values.indexOf(max);
-                if (idx > -1) values[idx] = 0;
-            }
-            let total = values.reduce((a, b) => a + b, 0);
-            if (specials.includes('x2')) total *= 2;
-            return total;
-        };
-
-        const Icon = ({ name, size = 20, className = "" }) => {
-            const iconRef = useRef(null);
-            useEffect(() => {
-                if (window.lucide) window.lucide.createIcons();
-            }, [name]);
-            return <i data-lucide={name} style={{ width: size, height: size }} className={className}></i>;
-        };
-
-        // --- Main Component ---
         function App() {
-            const [fb, setFb] = useState(null);
+            const [fbReady, setFbReady] = useState(false);
             const [user, setUser] = useState(null);
             const [room, setRoom] = useState(null);
-            const [roomIdInput, setRoomIdInput] = useState('');
-            const [declaredValue, setDeclaredValue] = useState(0);
-            const [playerName, setPlayerName] = useState('Player');
             const [loading, setLoading] = useState(true);
+            const [playerName, setPlayerName] = useState(localStorage.getItem('coyote_name') || 'プレイヤー');
+            const [roomIdInput, setRoomIdInput] = useState('');
+            const [maxPlayers, setMaxPlayers] = useState(5);
+            const [error, setError] = useState('');
 
-            // 1. Initialize Firebase
+            const refs = useRef({ db: null, auth: null, appId: 'default' });
+
             useEffect(() => {
-                initFirebase().then(services => {
-                    const app = services.initializeApp(firebaseConfig);
-                    const auth = services.getAuth(app);
-                    const db = services.getFirestore(app);
-                    setFb({ ...services, app, auth, db });
+                const init = async () => {
+                    if (!window.FB) return;
+                    
+                    try {
+                        const { auth, db, signInWithCustomToken, signInAnonymously, onAuthStateChanged } = window.FB;
+                        
+                        refs.current.auth = auth;
+                        refs.current.db = db;
+                        refs.current.appId = typeof __app_id !== 'undefined' ? __app_id : 'online-coyote-pro-v1';
 
-                    services.onAuthStateChanged(auth, async (u) => {
-                        if (u) {
-                            setUser(u);
-                            setPlayerName(`User_${u.uid.slice(0, 4)}`);
-                            const params = new URLSearchParams(window.location.search);
-                            const rId = params.get('room');
-                            if (rId) handleJoin(rId, u, services, db);
-                        } else {
-                            await services.signInAnonymously(auth);
+                        // RULE 3: Auth First
+                        const unsubscribe = onAuthStateChanged(auth, (u) => {
+                            if (u) {
+                                setUser(u);
+                                setLoading(false);
+                                setFbReady(true);
+                            }
+                        });
+
+                        try {
+                            // 優先順位: 1. Custom Token, 2. Anonymous
+                            if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                                await signInWithCustomToken(auth, __initial_auth_token);
+                            } else {
+                                // 匿名認証が制限されている場合(auth/admin-restricted-operation)に備えてトライキャッチ
+                                await signInAnonymously(auth);
+                            }
+                        } catch (authError) {
+                            console.error("Auth Method Error:", authError.code);
+                            setError("認証に失敗しました。プロジェクトの設定を確認してください。");
+                            setLoading(false);
                         }
+
+                        return () => unsubscribe();
+                    } catch (e) {
+                        console.error("Critical Firebase Init Error:", e);
+                        setError("接続エラーが発生しました。");
                         setLoading(false);
-                    });
-                }).catch(err => {
-                    console.error("Failed to load Firebase", err);
-                    setLoading(false);
-                });
+                    }
+                };
+
+                if (window.FB) {
+                    init();
+                } else {
+                    window.addEventListener('firebase-ready', init);
+                }
+                return () => window.removeEventListener('firebase-ready', init);
             }, []);
 
-            // 2. Room Listener
             useEffect(() => {
-                if (!fb || !user || !room?.id) return;
-                const unsub = fb.onSnapshot(fb.doc(fb.db, 'artifacts', COLLECTION_ID, 'public', 'data', 'rooms', room.id), (snap) => {
-                    if (snap.exists()) setRoom({ id: snap.id, ...snap.data() });
-                });
+                // RULE 3 Guard
+                if (!user || !room?.id || !fbReady) return;
+                const { onSnapshot, doc } = window.FB;
+                
+                const unsub = onSnapshot(
+                    doc(refs.current.db, 'artifacts', refs.current.appId, 'public', 'data', 'rooms', room.id), 
+                    (snap) => {
+                        if (snap.exists()) setRoom({ id: snap.id, ...snap.data() });
+                        else setRoom(null);
+                    }, 
+                    (err) => console.error("Firestore sync error:", err)
+                );
                 return () => unsub();
-            }, [fb, user, room?.id]);
+            }, [user, room?.id, fbReady]);
 
-            const handleCreate = async () => {
-                const id = Math.floor(100000 + Math.random() * 900000).toString();
+            const DECK_DEFINITION = [
+                { value: 20, count: 1, color: '#92400e' },
+                { value: 15, count: 2, color: '#b45309' },
+                { value: 10, count: 3, color: '#d97706' },
+                { value: 5, count: 4, color: '#f59e0b' },
+                { value: 4, count: 4, color: '#fbbf24' },
+                { value: 3, count: 4, color: '#fbbf24' },
+                { value: 2, count: 4, color: '#fbbf24' },
+                { value: 1, count: 4, color: '#fbbf24' },
+                { value: 0, count: 3, color: '#94a3b8' },
+                { value: -5, count: 2, color: '#f87171' },
+                { value: -10, count: 1, color: '#ef4444' },
+                { type: 'x2', count: 1, color: '#8b5cf6' },
+                { type: 'max0', count: 1, color: '#06b6d4' },
+                { type: '?', count: 1, color: '#ec4899' },
+                { type: 'night', count: 1, color: '#1e293b' }
+            ];
+
+            const generateDeck = () => {
+                const deck = [];
+                DECK_DEFINITION.forEach(item => {
+                    for (let i = 0; i < item.count; i++) {
+                        deck.push({ ...item, id: Math.random().toString(36).substr(2, 9) });
+                    }
+                });
+                return deck.sort(() => Math.random() - 0.5);
+            };
+
+            const calculateTotal = (cards, deck) => {
+                let processedCards = [...cards];
+                let newDeck = [...deck];
+                processedCards = processedCards.map(c => {
+                    if (c.type === '?') return newDeck.length > 0 ? newDeck.pop() : { value: 0 };
+                    return c;
+                });
+                let values = processedCards.map(c => typeof c.value === 'number' ? c.value : 0);
+                const specials = processedCards.map(c => c.type);
+                if (specials.includes('max0')) {
+                    const max = Math.max(...values);
+                    const idx = values.indexOf(max);
+                    if (idx > -1) values[idx] = 0;
+                }
+                let total = values.reduce((a, b) => a + b, 0);
+                if (specials.includes('x2')) total *= 2;
+                return { total, deck: newDeck };
+            };
+
+            const createRoom = async () => {
+                if (!user || !fbReady) return;
+                const { setDoc, doc } = window.FB;
+                const id = Math.floor(100000 + Math.random() * 899999).toString();
                 const roomData = {
                     hostId: user.uid,
                     status: 'waiting',
-                    players: [{ uid: user.uid, name: playerName, hp: 3, isCPU: false }],
+                    maxPlayers: parseInt(maxPlayers),
+                    players: [{ uid: user.uid, name: playerName, hp: 3 }],
+                    viewers: [],
                     deck: generateDeck(),
                     currentTurn: 0,
                     currentValue: 0
                 };
-                await fb.setDoc(fb.doc(fb.db, 'artifacts', COLLECTION_ID, 'public', 'data', 'rooms', id), roomData);
-                setRoom({ id, ...roomData });
-                window.history.pushState({}, '', `?room=${id}`);
+                try {
+                    await setDoc(doc(refs.current.db, 'artifacts', refs.current.appId, 'public', 'data', 'rooms', id), roomData);
+                    setRoom({ id, ...roomData });
+                    localStorage.setItem('coyote_name', playerName);
+                } catch (e) {
+                    setError("ルーム作成に失敗しました。");
+                }
             };
 
-            const handleJoin = async (id, u = user, services = fb, db = fb.db) => {
-                const rid = id || roomIdInput;
-                if (!rid) return;
-                const rRef = services.doc(db, 'artifacts', COLLECTION_ID, 'public', 'data', 'rooms', rid);
-                const snap = await services.getDoc(rRef);
-                if (!snap.exists()) return alert("Room not found");
-                const data = snap.data();
-                if (!data.players.some(p => p.uid === u.uid)) {
-                    const players = [...data.players, { uid: u.uid, name: playerName, hp: 3, isCPU: false }];
-                    await services.updateDoc(rRef, { players });
+            const joinRoom = async () => {
+                const rid = roomIdInput.trim().toUpperCase();
+                if (!rid || !user || !fbReady) return;
+                const { getDoc, updateDoc, doc } = window.FB;
+                try {
+                    const snap = await getDoc(doc(refs.current.db, 'artifacts', refs.current.appId, 'public', 'data', 'rooms', rid));
+                    if (!snap.exists()) return setError('ルームが見つかりません');
+                    const data = snap.data();
+                    let players = [...data.players];
+                    let viewers = [...(data.viewers || [])];
+                    const existingPlayer = players.find(p => p.uid === user.uid);
+                    if (existingPlayer) {
+                        players = players.map(p => p.uid === user.uid ? {...p, name: playerName} : p);
+                    } else if (data.status === 'waiting' && players.length < data.maxPlayers) {
+                        players.push({ uid: user.uid, name: playerName, hp: 3 });
+                    } else {
+                        if (!viewers.includes(user.uid)) viewers.push(user.uid);
+                    }
+                    await updateDoc(doc(refs.current.db, 'artifacts', refs.current.appId, 'public', 'data', 'rooms', rid), { players, viewers });
+                    setRoom({ id: rid, ...data, players, viewers });
+                    localStorage.setItem('coyote_name', playerName);
+                } catch (e) {
+                    setError("ルーム参加に失敗しました。");
                 }
-                setRoom({ id: snap.id, ...data });
-                window.history.pushState({}, '', `?room=${snap.id}`);
+            };
+
+            const leaveRoom = async () => {
+                if (!room || !user || !fbReady) return;
+                const { updateDoc, doc } = window.FB;
+                const rid = room.id;
+                const players = room.players.filter(p => p.uid !== user.uid);
+                const viewers = (room.viewers || []).filter(v => v !== user.uid);
+                try {
+                    if (players.length > 0) {
+                        await updateDoc(doc(refs.current.db, 'artifacts', refs.current.appId, 'public', 'data', 'rooms', rid), { 
+                            players, viewers,
+                            hostId: room.hostId === user.uid ? players[0].uid : room.hostId
+                        });
+                    }
+                    setRoom(null);
+                } catch (e) {
+                    setRoom(null);
+                }
             };
 
             const startGame = async () => {
-                const deck = [...room.deck];
-                const players = room.players.map(p => ({ ...p, currentCard: deck.pop() }));
-                await fb.updateDoc(fb.doc(fb.db, 'artifacts', COLLECTION_ID, 'public', 'data', 'rooms', room.id), {
-                    status: 'playing', players, deck, currentTurn: 0, currentValue: 0
-                });
-            };
-
-            const handleDeclare = async () => {
-                if (declaredValue <= room.currentValue) return alert("More than current claim please");
-                await fb.updateDoc(fb.doc(fb.db, 'artifacts', COLLECTION_ID, 'public', 'data', 'rooms', room.id), {
-                    currentValue: declaredValue,
-                    currentTurn: (room.currentTurn + 1) % room.players.length
+                if (!room || room.hostId !== user.uid || !fbReady) return;
+                const { updateDoc, doc } = window.FB;
+                let deck = [...room.deck];
+                const activePlayers = room.players.filter(p => p.hp > 0);
+                if (deck.length < activePlayers.length) deck = generateDeck();
+                const playersWithCards = room.players.map(p => p.hp > 0 ? { ...p, currentCard: deck.pop() } : p);
+                await updateDoc(doc(refs.current.db, 'artifacts', refs.current.appId, 'public', 'data', 'rooms', room.id), {
+                    status: 'playing',
+                    players: playersWithCards,
+                    deck,
+                    currentValue: 0,
+                    currentTurn: room.players.findIndex(p => p.hp > 0),
+                    lastResult: null
                 });
             };
 
             const handleCoyote = async () => {
-                const cards = room.players.map(p => p.currentCard);
-                const total = calculateTotal(cards);
-                const isSuccess = room.currentValue > total;
-                const loserIdx = isSuccess ? (room.currentTurn - 1 + room.players.length) % room.players.length : room.currentTurn;
-                const newPlayers = room.players.map((p, i) => i === loserIdx ? { ...p, hp: p.hp - 1 } : p);
-                
-                await fb.updateDoc(fb.doc(fb.db, 'artifacts', COLLECTION_ID, 'public', 'data', 'rooms', room.id), {
+                if (!room || !fbReady) return;
+                const { updateDoc, doc } = window.FB;
+                const activePlayers = room.players.filter(p => p.hp > 0);
+                const cards = activePlayers.map(p => p.currentCard);
+                const { total, deck: nextDeck } = calculateTotal(cards, room.deck);
+                const prevTurnIdx = (room.currentTurn - 1 + room.players.length) % room.players.length;
+                const loserIdx = room.currentValue > total ? prevTurnIdx : room.currentTurn;
+                const updatedPlayers = room.players.map((p, i) => i === loserIdx ? { ...p, hp: p.hp - 1 } : p);
+                await updateDoc(doc(refs.current.db, 'artifacts', refs.current.appId, 'public', 'data', 'rooms', room.id), {
                     status: 'result',
-                    lastResult: { total, claimed: room.currentValue, loserName: room.players[loserIdx].name },
-                    players: newPlayers
+                    lastResult: { total, loserName: room.players[loserIdx].name, success: room.currentValue > total },
+                    players: updatedPlayers,
+                    deck: nextDeck
                 });
             };
 
-            if (loading) return <div className="h-screen flex items-center justify-center font-black italic animate-pulse text-indigo-500">INITIALIZING...</div>;
+            const Icon = ({ name, size = 20, className = "" }) => {
+                useEffect(() => { if (window.lucide) window.lucide.createIcons(); }, [name]);
+                return <i data-lucide={name} style={{ width: size, height: size }} className={className}></i>;
+            };
+
+            const CoyoteCard = ({ card, revealed, isMe }) => (
+                <div className="w-16 h-24 md:w-24 md:h-36 relative rounded-xl overflow-hidden shadow-2xl transition-all perspective-1000">
+                    <div className={`absolute inset-0 bg-white flex flex-col items-center justify-center transition-opacity duration-500 ${revealed ? 'opacity-100' : 'opacity-0'}`} style={{ color: card?.color || '#333' }}>
+                        <span className="text-xl md:text-3xl font-black italic">
+                            {card?.type === 'x2' ? '×2' : (card?.value ?? card?.type ?? '?')}
+                        </span>
+                        {card?.type && card.type !== 'x2' && <span className="text-[8px] md:text-[10px] font-bold uppercase mt-1">{card.type}</span>}
+                    </div>
+                    <div className={`absolute inset-0 bg-indigo-600 flex items-center justify-center transition-opacity duration-500 ${revealed ? 'opacity-0' : 'opacity-100'}`}>
+                        <div className="text-indigo-400 font-black text-center leading-tight">
+                            <Icon name="zap" size={24} className="mx-auto mb-1 opacity-50" />
+                            <div className="text-[8px] tracking-widest">COYOTE</div>
+                        </div>
+                    </div>
+                    {isMe && !revealed && (
+                        <div className="absolute inset-0 bg-black/40 flex items-center justify-center backdrop-blur-[2px]">
+                            <Icon name="eye-off" size={16} className="text-white/60" />
+                        </div>
+                    )}
+                </div>
+            );
+
+            const winner = useMemo(() => {
+                if (!room) return null;
+                const survivors = room.players.filter(p => p.hp > 0);
+                return (survivors.length === 1 && room.players.length >= 2) ? survivors[0] : null;
+            }, [room]);
+
+            const isSpectator = room?.viewers?.includes(user?.uid) || (room?.status === 'playing' && !room?.players.find(p => p.uid === user?.uid));
+
+            if (loading) return <div className="h-full flex flex-col items-center justify-center text-indigo-500 font-black italic gap-4">
+                <div className="w-8 h-8 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin"></div>
+                CONNECTING...
+            </div>;
 
             if (!room) return (
-                <div className="h-screen flex flex-col items-center justify-center p-8 space-y-12">
-                    <h1 className="text-7xl font-black italic tracking-tighter text-white">COYOTE</h1>
-                    <div className="w-full max-w-xs space-y-4">
-                        <button onClick={handleCreate} className="w-full py-5 bg-indigo-600 rounded-3xl font-black italic text-xl shadow-xl active:scale-95 transition-all">
-                            CREATE ROOM
-                        </button>
-                        <div className="flex items-center gap-2 bg-slate-900/50 p-2 rounded-[2rem] border border-slate-800">
-                            <input 
-                                placeholder="ROOM ID" 
-                                className="flex-grow bg-transparent border-none py-3 px-6 font-mono text-xl outline-none"
-                                value={roomIdInput}
-                                onChange={e => setRoomIdInput(e.target.value)}
-                            />
-                            <button onClick={() => handleJoin()} className="p-4 bg-white text-slate-950 rounded-full"><Icon name="arrow-right" /></button>
+                <div className="h-full flex flex-col items-center p-4 md:p-6 bg-slate-950 overflow-y-auto">
+                    <div className="text-center mt-12 mb-10">
+                        <h1 className="text-6xl md:text-8xl font-black italic text-white tracking-tighter float">COYOTE</h1>
+                        <p className="text-indigo-500 font-bold tracking-[0.3em] ml-2">ONLINE PRO</p>
+                    </div>
+                    <div className="w-full max-w-lg space-y-6">
+                        <div className="glass-panel p-6 rounded-3xl space-y-2">
+                            <label className="text-[10px] font-black text-slate-500 uppercase flex items-center gap-2">
+                                <Icon name="user" size={12} /> あなたの表示名
+                            </label>
+                            <input className="w-full bg-slate-900/50 border-2 border-slate-800 p-4 rounded-2xl outline-none focus:border-indigo-500 transition-colors font-bold" placeholder="なまえ" value={playerName} onChange={e => setPlayerName(e.target.value)} />
                         </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div className="glass-panel p-6 rounded-[2rem] border-t-4 border-indigo-600 space-y-4">
+                                <div className="flex items-center gap-2 text-indigo-400 font-black"><Icon name="crown" size={20} /><span>ホスト</span></div>
+                                <div className="space-y-3">
+                                    <select value={maxPlayers} onChange={e => setMaxPlayers(e.target.value)} className="w-full bg-slate-800 border-2 border-slate-700 p-3 rounded-xl font-black outline-none appearance-none cursor-pointer">
+                                        {[2,3,4,5,6,7,8,9,10].map(n => <option key={n} value={n}>最大 {n} 名</option>)}
+                                    </select>
+                                    <button onClick={createRoom} className="w-full py-4 bg-indigo-600 hover:bg-indigo-500 rounded-2xl font-black text-white shadow-lg transition-all flex items-center justify-center gap-2">
+                                        <Icon name="plus" size={18} /> 部屋を作成
+                                    </button>
+                                </div>
+                            </div>
+                            <div className="glass-panel p-6 rounded-[2rem] border-t-4 border-emerald-500 space-y-4">
+                                <div className="flex items-center gap-2 text-emerald-400 font-black"><Icon name="log-in" size={20} /><span>ゲスト</span></div>
+                                <div className="space-y-3">
+                                    <input className="w-full bg-slate-800 border-2 border-slate-700 p-3 rounded-xl outline-none focus:border-emerald-500 uppercase font-black text-center tracking-widest" placeholder="ID (6桁)" value={roomIdInput} onChange={e => setRoomIdInput(e.target.value)} />
+                                    <button onClick={joinRoom} className="w-full py-4 bg-emerald-600 hover:bg-emerald-500 rounded-2xl font-black text-white shadow-lg transition-all flex items-center justify-center gap-2">
+                                        参加する
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                        {error && <div className="text-red-400 text-sm font-bold text-center bg-red-400/10 py-3 rounded-xl border border-red-400/20">{error}</div>}
                     </div>
                 </div>
             );
 
-            const isMyTurn = room.players[room.currentTurn]?.uid === user.uid;
-            const myIdx = room.players.findIndex(p => p.uid === user.uid);
+            const isMyTurn = room.status === 'playing' && room.players[room.currentTurn]?.uid === user.uid;
 
             return (
-                <div className="h-screen flex flex-col bg-slate-950">
-                    <header className="p-4 flex justify-between items-center border-b border-slate-900">
-                        <span className="font-black italic text-indigo-500">ROOM: {room.id}</span>
-                        <div className="flex gap-2">
-                            <button onClick={() => { navigator.clipboard.writeText(window.location.href); alert("Copied!"); }} className="p-2 bg-slate-800 rounded-full"><Icon name="share-2" size={16} /></button>
-                            <button onClick={() => window.location.href = window.location.origin} className="p-2 bg-slate-800 rounded-full text-red-500"><Icon name="log-out" size={16} /></button>
+                <div className="h-full flex flex-col bg-slate-950">
+                    <header className="p-4 flex justify-between items-center border-b border-white/5 glass-panel z-50">
+                        <div className="flex items-center gap-3">
+                            <span className="bg-indigo-600 text-[10px] font-black px-2 py-1 rounded">ROOM</span>
+                            <span className="font-black tracking-tighter text-lg">{room.id}</span>
+                        </div>
+                        <div className="flex items-center gap-4">
+                            <div className="flex items-center gap-1.5 text-slate-500"><Icon name="layers" size={14} /><span className="text-[10px] font-black">{room.deck?.length || 0}</span></div>
+                            <div className="flex items-center gap-1.5 text-slate-500"><Icon name="users" size={14} /><span className="text-[10px] font-black">{room.players.length}/{room.maxPlayers}</span></div>
+                            {room.status === 'waiting' && (
+                                <button onClick={leaveRoom} className="ml-2 p-2 bg-red-500/10 text-red-400 rounded-lg hover:bg-red-500/20 transition-colors">
+                                    <Icon name="log-out" size={18} />
+                                </button>
+                            )}
                         </div>
                     </header>
 
-                    <main className="flex-grow relative flex flex-col items-center p-4">
-                        <div className="absolute top-8 text-center z-10">
-                            <p className="text-[10px] font-black text-indigo-400 uppercase tracking-widest">Current Claim</p>
-                            <div className="text-8xl font-black italic text-white drop-shadow-2xl">{room.currentValue}</div>
+                    <main className="flex-grow relative overflow-hidden">
+                        <div className="absolute inset-0 flex items-start justify-center pt-8 px-4">
+                            <div className="flex gap-4 overflow-x-auto no-scrollbar pb-8 w-full justify-center">
+                                {room.players.map((p, i) => {
+                                    const isMe = p.uid === user.uid;
+                                    const isActive = p.hp > 0;
+                                    const revealed = room.status === 'result' || (!isMe && isActive) || (isSpectator && isActive);
+                                    const isTurn = room.status === 'playing' && room.currentTurn === i;
+                                    return (
+                                        <div key={p.uid} className={`flex flex-col items-center gap-2 transition-all duration-500 ${!isActive ? 'grayscale opacity-30' : ''} ${isTurn ? 'scale-110' : ''}`}>
+                                            <CoyoteCard card={p.currentCard} revealed={revealed} isMe={isMe} />
+                                            <div className="text-center">
+                                                <div className={`text-[10px] font-black mb-1 truncate w-20 ${isMe ? 'text-indigo-400' : 'text-slate-400'}`}>{p.name}</div>
+                                                <div className="flex justify-center gap-1">
+                                                    {[...Array(3)].map((_, j) => (
+                                                        <div key={j} className={`w-1.5 h-1.5 rounded-full ${j < p.hp ? 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.5)]' : 'bg-slate-800'}`}></div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                            {isTurn && <div className="w-1.5 h-1.5 bg-indigo-500 rounded-full animate-ping"></div>}
+                                        </div>
+                                    );
+                                })}
+                            </div>
                         </div>
 
-                        <div className="flex-grow w-full max-w-sm relative mt-20 flex items-center justify-center">
-                            {room.players.map((p, idx) => {
-                                const relativeIdx = (idx - myIdx + room.players.length) % room.players.length;
-                                const angle = (relativeIdx / room.players.length) * 2 * Math.PI + (Math.PI / 2);
-                                const radius = 130;
-                                const x = Math.cos(angle) * radius;
-                                const y = Math.sin(angle) * radius;
-                                const isMe = p.uid === user.uid;
-                                
-                                return (
-                                    <div key={p.uid} className="absolute transition-all duration-500" style={{ transform: `translate(${x}px, ${y}px)` }}>
-                                        <div className="flex flex-col items-center">
-                                            <div className={`w-16 h-24 rounded-2xl border-2 flex items-center justify-center text-2xl font-black ${
-                                                room.status === 'result' || !isMe ? 'bg-white text-slate-900 border-white' : 'bg-indigo-600 border-indigo-500'
-                                            }`}>
-                                                {(room.status === 'result' || !isMe) ? (p.currentCard?.value ?? (p.currentCard?.type === 'x2' ? 'x2' : '?')) : <Icon name="eye-off" size={16} className="opacity-30" />}
-                                            </div>
-                                            <span className="mt-2 text-[10px] font-bold text-slate-500">{p.name}</span>
+                        <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                            <div className="pointer-events-auto">
+                                {room.status === 'playing' && (
+                                    <div className="text-center">
+                                        <div className="text-[10px] font-black text-indigo-400 tracking-[0.4em] mb-2 uppercase">Current Target</div>
+                                        <div className="text-9xl font-black italic text-white drop-shadow-[0_0_30px_rgba(255,255,255,0.2)]">{room.currentValue}</div>
+                                    </div>
+                                )}
+
+                                {room.status === 'waiting' && (
+                                    <div className="bg-slate-900/50 backdrop-blur-xl p-8 rounded-[2rem] border border-white/5 text-center max-w-[320px] shadow-2xl">
+                                        <Icon name="clock" size={32} className="mx-auto mb-4 text-indigo-500 animate-pulse" />
+                                        <h2 className="text-2xl font-black italic mb-2 uppercase tracking-tighter">Waiting Lobby</h2>
+                                        <div className="space-y-3 mt-6">
+                                            {room.hostId === user.uid ? (
+                                                room.players.length >= 2 ? (
+                                                    <button onClick={startGame} className="w-full py-4 bg-indigo-600 rounded-2xl font-black text-xl italic hover:scale-105 transition-all shadow-xl flex items-center justify-center gap-2">
+                                                        <Icon name="play" size={20} /> GAME START
+                                                    </button>
+                                                ) : (
+                                                    <div className="py-4 bg-slate-800/50 text-slate-400 rounded-2xl font-bold text-sm border border-white/5">
+                                                        あと {2 - room.players.length} 名で開始可能
+                                                    </div>
+                                                )
+                                            ) : (
+                                                <div className="py-4 bg-indigo-500/10 text-indigo-400 rounded-2xl font-bold border border-indigo-500/20 animate-pulse">
+                                                    ホストの開始待ち...
+                                                </div>
+                                            )}
+                                            <button onClick={leaveRoom} className="w-full py-3 text-slate-500 hover:text-white font-bold text-sm flex items-center justify-center gap-2 transition-colors">
+                                                <Icon name="arrow-left" size={16} /> 退出して戻る
+                                            </button>
                                         </div>
                                     </div>
-                                );
-                            })}
-                        </div>
+                                )}
 
-                        <div className="w-full max-w-md pb-10 px-4">
-                            {room.status === 'waiting' && room.hostId === user.uid && (
-                                <button onClick={startGame} className="w-full py-5 bg-indigo-600 rounded-[2rem] font-black text-xl italic">START GAME</button>
-                            )}
-                            {room.status === 'playing' && isMyTurn && (
-                                <div className="space-y-4">
-                                    <div className="flex items-center justify-between bg-slate-900 p-4 rounded-[2.5rem] border border-slate-800">
-                                        <button onClick={() => setDeclaredValue(v => Math.max(room.currentValue + 1, v - 1))} className="p-4 bg-slate-800 rounded-full"><Icon name="minus" /></button>
-                                        <div className="text-5xl font-black italic">{declaredValue || room.currentValue + 1}</div>
-                                        <button onClick={() => setDeclaredValue(v => Math.max(room.currentValue + 1, v + 1))} className="p-4 bg-slate-800 rounded-full"><Icon name="plus" /></button>
+                                {room.status === 'result' && !winner && (
+                                    <div className="bg-white text-slate-950 p-8 rounded-[3rem] w-full max-w-[280px] text-center celebrate-anim shadow-2xl">
+                                        <div className="text-[10px] font-black text-slate-400 tracking-widest mb-2 uppercase">Actual Total</div>
+                                        <div className="text-7xl font-black italic mb-4 text-indigo-600">{room.lastResult?.total}</div>
+                                        <div className="font-bold text-lg mb-6 leading-tight">{room.lastResult?.loserName}がダメージ！</div>
+                                        {room.hostId === user.uid && (
+                                            <button onClick={startGame} className="w-full py-4 bg-slate-950 text-white rounded-2xl font-black hover:bg-indigo-600 transition-colors">次へ進む</button>
+                                        )}
                                     </div>
-                                    <div className="grid grid-cols-2 gap-4">
-                                        <button onClick={handleDeclare} className="py-5 bg-indigo-600 rounded-[2rem] font-black text-xl italic">RAISE</button>
-                                        <button onClick={handleCoyote} className="py-5 bg-red-600 rounded-[2rem] font-black text-xl italic">COYOTE!</button>
+                                )}
+
+                                {winner && (
+                                    <div className="bg-white text-slate-950 p-10 rounded-[3rem] w-full max-w-[320px] text-center celebrate-anim shadow-2xl relative">
+                                        <div className="absolute -top-10 left-1/2 -translate-x-1/2 text-6xl">👑</div>
+                                        <div className="text-[10px] font-black text-slate-400 tracking-widest mb-2 uppercase">Champion</div>
+                                        <div className="text-4xl font-black italic mb-6 text-indigo-600">{winner.name}</div>
+                                        <button onClick={() => setRoom(null)} className="w-full py-4 bg-slate-950 text-white rounded-2xl font-black hover:bg-indigo-600 transition-colors">ロビーへ戻る</button>
                                     </div>
-                                </div>
-                            )}
-                            {room.status === 'result' && (
-                                <div className="bg-white text-slate-950 p-8 rounded-[3rem] text-center space-y-4">
-                                    <h2 className="text-5xl font-black italic">TOTAL: {room.lastResult?.total}</h2>
-                                    <button onClick={startGame} className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-black italic">NEXT ROUND</button>
-                                </div>
-                            )}
+                                )}
+                            </div>
                         </div>
                     </main>
+
+                    {isMyTurn && !winner && (
+                        <footer className="p-6 bg-slate-900/50 backdrop-blur-xl border-t border-white/5">
+                            <div className="max-w-md mx-auto grid grid-cols-2 gap-4">
+                                <button onClick={() => {
+                                    const { updateDoc, doc } = window.FB;
+                                    updateDoc(doc(refs.current.db, 'artifacts', refs.current.appId, 'public', 'data', 'rooms', room.id), { 
+                                        currentValue: room.currentValue + 1, 
+                                        currentTurn: (room.currentTurn + 1) % room.players.length 
+                                    });
+                                }} className="py-5 bg-indigo-600 rounded-3xl font-black text-2xl italic shadow-xl active:scale-95 transition-all">RAISE {room.currentValue + 1}</button>
+                                <button onClick={handleCoyote} className="py-5 bg-red-600 rounded-3xl font-black text-2xl italic shadow-xl active:scale-95 transition-all">COYOTE!</button>
+                            </div>
+                        </footer>
+                    )}
                 </div>
             );
         }
