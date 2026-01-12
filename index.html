@@ -11,47 +11,55 @@
     <script src="https://unpkg.com/lucide@latest"></script>
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, setDoc, getDoc, updateDoc, onSnapshot, collection, query, where } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-
-        window.firebase = { initializeApp, getAuth, signInAnonymously, onAuthStateChanged, getFirestore, doc, setDoc, getDoc, updateDoc, onSnapshot, collection, query, where };
+        window.firebase = { initializeApp, getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, getFirestore, doc, setDoc, getDoc, updateDoc, onSnapshot, collection, query, where };
     </script>
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap');
-        body { font-family: 'Inter', sans-serif; -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&family=Noto+Sans+JP:wght@400;700;900&display=swap');
+        body { font-family: 'Inter', 'Noto Sans JP', sans-serif; -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
         .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
         @keyframes float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-10px); } }
         .float { animation: float 3s ease-in-out infinite; }
-        .shake { animation: shake 0.5s cubic-bezier(.36,.07,.19,.97) both; }
-        @keyframes shake { 10%, 90% { transform: translate3d(-1px, 0, 0); } 20%, 80% { transform: translate3d(2px, 0, 0); } 30%, 50%, 70% { transform: translate3d(-4px, 0, 0); } 40%, 60% { transform: translate3d(4px, 0, 0); } }
+        @keyframes celebrate {
+            0% { transform: scale(0.5); opacity: 0; }
+            50% { transform: scale(1.1); opacity: 1; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+        .celebrate-anim { animation: celebrate 0.8s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; }
+        .glass-panel { background: rgba(30, 41, 59, 0.7); backdrop-filter: blur(12px); border: 1px solid rgba(255, 255, 255, 0.1); }
     </style>
 </head>
 <body class="bg-slate-950 text-slate-100 overflow-hidden fixed inset-0">
     <div id="root" class="h-full w-full"></div>
 
     <script type="text/babel">
-        const { useState, useEffect, useCallback, useRef, useMemo } = React;
-        const { initializeApp, getAuth, signInAnonymously, onAuthStateChanged, getFirestore, doc, setDoc, getDoc, updateDoc, onSnapshot } = window.firebase;
+        const { useState, useEffect, useMemo, useRef } = React;
+        const { initializeApp, getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, getFirestore, doc, setDoc, getDoc, updateDoc, onSnapshot } = window.firebase;
 
-        const firebaseConfig = {
-            apiKey: "AIzaSyCq9rT0N5X7HoCb-OZlBNEtyEAcjuTTDEA",
-            authDomain: "hero-tablegames.firebaseapp.com",
-            projectId: "hero-tablegames",
-            storageBucket: "hero-tablegames.firebasestorage.app",
-            messagingSenderId: "674602265882",
-            appId: "1:674602265882:web:13b2cbabe692f44c7890a3"
-        };
-
+        const firebaseConfig = JSON.parse(__firebase_config);
         const app = initializeApp(firebaseConfig);
         const auth = getAuth(app);
         const db = getFirestore(app);
-        const appId = "online-coyote-pro-v1";
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'online-coyote-pro-v1';
 
         const DECK_DEFINITION = [
-            { value: -10, count: 1 }, { value: -5, count: 2 }, { value: 0, count: 3 },
-            { value: 1, count: 4 }, { value: 2, count: 4 }, { value: 3, count: 4 }, { value: 4, count: 4 },
-            { value: 5, count: 4 }, { value: 10, count: 3 }, { value: 15, count: 2 }, { value: 20, count: 1 },
-            { type: 'x2', count: 1 }, { type: 'max0', count: 1 }, { type: '?', count: 1 }, { type: 'night', count: 1 }
+            { value: 20, count: 1, color: '#92400e' },
+            { value: 15, count: 2, color: '#b45309' },
+            { value: 10, count: 3, color: '#d97706' },
+            { value: 5, count: 4, color: '#f59e0b' },
+            { value: 4, count: 4, color: '#fbbf24' },
+            { value: 3, count: 4, color: '#fbbf24' },
+            { value: 2, count: 4, color: '#fbbf24' },
+            { value: 1, count: 4, color: '#fbbf24' },
+            { value: 0, count: 3, color: '#94a3b8' },
+            { value: -5, count: 2, color: '#f87171' },
+            { value: -10, count: 1, color: '#ef4444' },
+            { type: 'x2', count: 1, color: '#8b5cf6' },
+            { type: 'max0', count: 1, color: '#06b6d4' },
+            { type: '?', count: 1, color: '#ec4899' },
+            { type: 'night', count: 1, color: '#1e293b' }
         ];
 
         const generateDeck = () => {
@@ -64,9 +72,15 @@
             return deck.sort(() => Math.random() - 0.5);
         };
 
-        const calculateTotal = (cards) => {
-            let values = cards.map(c => typeof c.value === 'number' ? c.value : 0);
-            const specials = cards.map(c => c.type).filter(Boolean);
+        const calculateTotal = (cards, deck) => {
+            let processedCards = [...cards];
+            let newDeck = [...deck];
+            processedCards = processedCards.map(c => {
+                if (c.type === '?') return newDeck.length > 0 ? newDeck.pop() : { value: 0 };
+                return c;
+            });
+            let values = processedCards.map(c => typeof c.value === 'number' ? c.value : 0);
+            const specials = processedCards.map(c => c.type);
             if (specials.includes('max0')) {
                 const max = Math.max(...values);
                 const idx = values.indexOf(max);
@@ -74,7 +88,7 @@
             }
             let total = values.reduce((a, b) => a + b, 0);
             if (specials.includes('x2')) total *= 2;
-            return total;
+            return { total, deck: newDeck };
         };
 
         const Icon = ({ name, size = 20, className = "" }) => {
@@ -82,403 +96,428 @@
             return <i data-lucide={name} style={{ width: size, height: size }} className={className}></i>;
         };
 
+        const Confetti = () => {
+            const canvasRef = useRef(null);
+            useEffect(() => {
+                const canvas = canvasRef.current;
+                const ctx = canvas.getContext('2d');
+                let frame;
+                canvas.width = window.innerWidth;
+                canvas.height = window.innerHeight;
+                const particles = Array.from({ length: 150 }).map(() => ({
+                    x: Math.random() * canvas.width,
+                    y: Math.random() * canvas.height - canvas.height,
+                    size: Math.random() * 8 + 4,
+                    color: ['#ef4444', '#3b82f6', '#10b981', '#f59e0b', '#8b5cf6'][Math.floor(Math.random() * 5)],
+                    speed: Math.random() * 3 + 2,
+                    angle: Math.random() * 6.28,
+                    spin: Math.random() * 0.2 - 0.1
+                }));
+                const loop = () => {
+                    ctx.clearRect(0, 0, canvas.width, canvas.height);
+                    particles.forEach(p => {
+                        ctx.save();
+                        ctx.translate(p.x, p.y);
+                        ctx.rotate(p.angle);
+                        ctx.fillStyle = p.color;
+                        ctx.fillRect(-p.size / 2, -p.size / 2, p.size, p.size);
+                        ctx.restore();
+                        p.y += p.speed; p.angle += p.spin;
+                        if (p.y > canvas.height) p.y = -20;
+                    });
+                    frame = requestAnimationFrame(loop);
+                };
+                loop();
+                return () => cancelAnimationFrame(frame);
+            }, []);
+            return <canvas ref={canvasRef} className="fixed inset-0 pointer-events-none z-[400]" />;
+        };
+
+        const CoyoteCard = ({ card, revealed, isMe }) => {
+            return (
+                <div className="w-16 h-24 md:w-24 md:h-36 relative rounded-xl overflow-hidden shadow-2xl transition-all perspective-1000">
+                    <div className={`absolute inset-0 bg-white flex flex-col items-center justify-center transition-opacity duration-500 ${revealed ? 'opacity-100' : 'opacity-0'}`} style={{ color: card?.color || '#333' }}>
+                        <span className="text-xl md:text-3xl font-black italic">
+                            {card?.type === 'x2' ? '×2' : (card?.value ?? card?.type ?? '?')}
+                        </span>
+                        {card?.type && card.type !== 'x2' && <span className="text-[8px] md:text-[10px] font-bold uppercase mt-1">{card.type}</span>}
+                    </div>
+                    <div className={`absolute inset-0 bg-indigo-600 flex items-center justify-center transition-opacity duration-500 ${revealed ? 'opacity-0' : 'opacity-100'}`}>
+                        <div className="text-indigo-400 font-black text-center leading-tight">
+                            <Icon name="zap" size={24} className="mx-auto mb-1 opacity-50" />
+                            <div className="text-[8px] tracking-widest">COYOTE</div>
+                        </div>
+                    </div>
+                    {isMe && !revealed && (
+                        <div className="absolute inset-0 bg-black/40 flex items-center justify-center backdrop-blur-[2px]">
+                            <Icon name="eye-off" size={16} className="text-white/60" />
+                        </div>
+                    )}
+                </div>
+            );
+        };
+
         function App() {
             const [user, setUser] = useState(null);
             const [room, setRoom] = useState(null);
             const [loading, setLoading] = useState(true);
-            const [isProcessing, setIsProcessing] = useState(false);
-            const [errorMessage, setErrorMessage] = useState('');
+            const [playerName, setPlayerName] = useState(localStorage.getItem('coyote_name') || 'プレイヤー');
             const [roomIdInput, setRoomIdInput] = useState('');
-            const [customRoomId, setCustomRoomId] = useState('');
-            const [maxPlayers, setMaxPlayers] = useState(4);
-            const [declaredValue, setDeclaredValue] = useState(0);
-            const [playerName, setPlayerName] = useState('Player');
-            const [isEditingName, setIsEditingName] = useState(false);
-
-            // 匿名認証が制限されている場合のローカルUIDフォールバック
-            const getFallbackUser = () => {
-                let localId = localStorage.getItem('coyote_local_uid');
-                if (!localId) {
-                    localId = 'temp_' + Math.random().toString(36).substr(2, 9);
-                    localStorage.setItem('coyote_local_uid', localId);
-                }
-                return { uid: localId, isAnonymous: true };
-            };
+            const [maxPlayers, setMaxPlayers] = useState(5);
+            const [error, setError] = useState('');
+            const [showHelp, setShowHelp] = useState(false);
 
             useEffect(() => {
                 const initAuth = async () => {
                     try {
-                        await signInAnonymously(auth);
-                    } catch (e) { 
-                        console.warn("Auth failed, falling back to local ID:", e.message);
-                        // 認証エラー時もローカルUIDをセットして続行可能にする
-                        setUser(getFallbackUser());
-                        setLoading(false);
-                    }
+                        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                            await signInWithCustomToken(auth, __initial_auth_token);
+                        } else {
+                            await signInAnonymously(auth);
+                        }
+                    } catch (e) { console.error(e); } finally { setLoading(false); }
                 };
                 initAuth();
-                const unsub = onAuthStateChanged(auth, (u) => {
-                    if (u) {
-                        setUser(u);
-                        setPlayerName(prev => prev === 'Player' ? `Player_${u.uid.slice(0, 4)}` : prev);
-                        setLoading(false);
-                    }
-                });
+                const unsub = onAuthStateChanged(auth, setUser);
                 return () => unsub();
             }, []);
 
-            const isSpectator = useMemo(() => {
-                if (!user || !room) return false;
-                const me = room.players.find(p => p.uid === user.uid);
-                return !me || me.hp <= 0;
-            }, [user, room]);
-
-            useEffect(() => {
-                if (!user) return;
-                const params = new URLSearchParams(window.location.search);
-                const rId = params.get('room');
-                if (rId) joinRoom(rId);
-            }, [user]);
-
             useEffect(() => {
                 if (!user || !room?.id) return;
-                const rRef = doc(db, 'artifacts', appId, 'public', 'data', 'rooms', room.id);
-                const unsub = onSnapshot(rRef, (snap) => {
+                const unsub = onSnapshot(doc(db, 'artifacts', appId, 'public', 'data', 'rooms', room.id), (snap) => {
                     if (snap.exists()) setRoom({ id: snap.id, ...snap.data() });
-                }, (err) => {
-                    console.error("Firestore sync error:", err);
-                });
+                }, (err) => console.error(err));
                 return () => unsub();
             }, [user, room?.id]);
 
-            const createRoom = async (isRandom = true) => {
-                if (!user || isProcessing) return;
-                setIsProcessing(true);
-                setErrorMessage('');
-                
-                try {
-                    const id = isRandom 
-                        ? Math.floor(100000 + Math.random() * 900000).toString() 
-                        : customRoomId.trim().toUpperCase();
-                    
-                    if (!id) {
-                        setErrorMessage("IDを入力してください");
-                        setIsProcessing(false);
-                        return;
-                    }
-
-                    const rRef = doc(db, 'artifacts', appId, 'public', 'data', 'rooms', id);
-                    const snap = await getDoc(rRef);
-                    
-                    if (snap.exists() && snap.data().hostId !== user.uid) {
-                        setErrorMessage("そのIDは既に使用されています");
-                        setIsProcessing(false);
-                        return;
-                    }
-
-                    const roomData = {
-                        hostId: user.uid,
-                        status: 'waiting',
-                        maxPlayers: maxPlayers,
-                        players: [{ uid: user.uid, name: playerName, hp: 3, isCPU: false }],
-                        deck: generateDeck(),
-                        currentTurn: 0,
-                        currentValue: 0,
-                        history: []
-                    };
-                    await setDoc(rRef, roomData);
-                    setRoom({ id, ...roomData });
-                } catch (e) {
-                    setErrorMessage("ルーム作成に失敗しました。認証設定またはFirestoreのルールを確認してください。");
-                    console.error(e);
-                } finally {
-                    setIsProcessing(false);
-                }
+            const createRoom = async () => {
+                if (!user) return;
+                const id = Math.floor(100000 + Math.random() * 899999).toString();
+                const roomData = {
+                    hostId: user.uid,
+                    status: 'waiting',
+                    maxPlayers: parseInt(maxPlayers),
+                    players: [{ uid: user.uid, name: playerName, hp: 3 }],
+                    viewers: [],
+                    deck: generateDeck(),
+                    currentTurn: 0,
+                    currentValue: 0
+                };
+                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'rooms', id), roomData);
+                setRoom({ id, ...roomData });
+                localStorage.setItem('coyote_name', playerName);
             };
 
-            const joinRoom = async (idArg) => {
-                const rid = (idArg || roomIdInput).trim().toUpperCase();
-                if (!rid || isProcessing || !user) return;
-                setIsProcessing(true);
-                setErrorMessage('');
-
-                try {
-                    const rRef = doc(db, 'artifacts', appId, 'public', 'data', 'rooms', rid);
-                    const snap = await getDoc(rRef);
-                    
-                    if (!snap.exists()) {
-                        if (!idArg) setErrorMessage("ルームが見つかりません");
-                        setIsProcessing(false);
-                        return;
-                    }
-                    
-                    const data = snap.data();
-                    const players = [...data.players];
-                    if (!players.find(p => p.uid === user.uid)) {
-                        if (data.status === 'waiting' && players.length < (data.maxPlayers || 8)) {
-                            players.push({ uid: user.uid, name: playerName, hp: 3, isCPU: false });
-                            await updateDoc(rRef, { players });
-                        }
-                    }
-                    setRoom({ id: rid, ...data, players });
-                } catch (e) {
-                    setErrorMessage("参加に失敗しました");
-                    console.error(e);
-                } finally {
-                    setIsProcessing(false);
+            const joinRoom = async () => {
+                const rid = roomIdInput.trim().toUpperCase();
+                if (!rid || !user) return;
+                const snap = await getDoc(doc(db, 'artifacts', appId, 'public', 'data', 'rooms', rid));
+                if (!snap.exists()) return setError('ルームが見つかりません');
+                const data = snap.data();
+                let players = [...data.players];
+                let viewers = [...(data.viewers || [])];
+                const existingPlayer = players.find(p => p.uid === user.uid);
+                if (existingPlayer) {
+                    players = players.map(p => p.uid === user.uid ? {...p, name: playerName} : p);
+                } else if (data.status === 'waiting' && players.length < data.maxPlayers) {
+                    players.push({ uid: user.uid, name: playerName, hp: 3 });
+                } else {
+                    if (!viewers.includes(user.uid)) viewers.push(user.uid);
                 }
+                await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'rooms', rid), { players, viewers });
+                setRoom({ id: rid, ...data, players, viewers });
+                localStorage.setItem('coyote_name', playerName);
+            };
+
+            const leaveRoom = async () => {
+                if (!room || !user) return;
+                const rid = room.id;
+                const players = room.players.filter(p => p.uid !== user.uid);
+                const viewers = (room.viewers || []).filter(v => v !== user.uid);
+                
+                // If the last person (host) leaves, we could theoretically delete, but for simple app we just disconnect state
+                if (players.length > 0) {
+                    await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'rooms', rid), { 
+                        players, 
+                        viewers,
+                        hostId: room.hostId === user.uid ? players[0].uid : room.hostId // Transfer host if host left
+                    });
+                }
+                setRoom(null);
             };
 
             const startGame = async () => {
-                if (isProcessing || !room) return;
-                setIsProcessing(true);
-                try {
-                    let deck = [...room.deck];
-                    const activePlayers = room.players.filter(p => p.hp > 0);
-                    if (deck.length < activePlayers.length) deck = generateDeck();
-                    
-                    const players = room.players.map(p => {
-                        if (p.hp > 0) {
-                            return { ...p, currentCard: deck.pop() };
-                        }
-                        return { ...p, currentCard: null };
-                    });
-
-                    let firstTurn = 0;
-                    for (let i = 0; i < players.length; i++) {
-                        if (players[i].hp > 0) { firstTurn = i; break; }
-                    }
-
-                    await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'rooms', room.id), {
-                        status: 'playing', players, deck, currentTurn: firstTurn, currentValue: 0, lastResult: null
-                    });
-                } catch (e) {
-                    setErrorMessage("ゲーム開始エラー");
-                } finally {
-                    setIsProcessing(false);
-                }
+                if (!room || room.hostId !== user.uid) return;
+                let deck = [...room.deck];
+                const activePlayers = room.players.filter(p => p.hp > 0);
+                if (deck.length < activePlayers.length) deck = generateDeck();
+                const playersWithCards = room.players.map(p => p.hp > 0 ? { ...p, currentCard: deck.pop() } : p);
+                await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'rooms', room.id), {
+                    status: 'playing',
+                    players: playersWithCards,
+                    deck,
+                    currentValue: 0,
+                    currentTurn: room.players.findIndex(p => p.hp > 0),
+                    lastResult: null
+                });
             };
 
-            if (loading) return <div className="h-full flex items-center justify-center bg-slate-950 text-indigo-500 font-black tracking-tighter text-2xl uppercase italic">Loading Coyote...</div>;
+            const handleCoyote = async () => {
+                if (!room) return;
+                const activePlayers = room.players.filter(p => p.hp > 0);
+                const cards = activePlayers.map(p => p.currentCard);
+                const { total, deck: nextDeck } = calculateTotal(cards, room.deck);
+                const prevTurnIdx = (room.currentTurn - 1 + room.players.length) % room.players.length;
+                const loserIdx = room.currentValue > total ? prevTurnIdx : room.currentTurn;
+                const updatedPlayers = room.players.map((p, i) => i === loserIdx ? { ...p, hp: p.hp - 1 } : p);
+                await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'rooms', room.id), {
+                    status: 'result',
+                    lastResult: { total, loserName: room.players[loserIdx].name, success: room.currentValue > total },
+                    players: updatedPlayers,
+                    deck: nextDeck
+                });
+            };
+
+            const winner = useMemo(() => {
+                if (!room) return null;
+                const survivors = room.players.filter(p => p.hp > 0);
+                return (survivors.length === 1 && room.players.length >= 2) ? survivors[0] : null;
+            }, [room]);
+
+            const isSpectator = room?.viewers?.includes(user?.uid) || (room?.status === 'playing' && !room?.players.find(p => p.uid === user?.uid));
+
+            if (loading) return <div className="h-full flex items-center justify-center text-indigo-500 font-black italic">CONNECTING...</div>;
 
             if (!room) return (
-                <div className="h-full flex flex-col items-center justify-center p-6 space-y-8 bg-slate-950">
-                    <div className="text-center float">
-                        <h1 className="text-7xl font-black italic text-white drop-shadow-2xl tracking-tighter">COYOTE</h1>
-                        <div className="mt-4 inline-flex items-center gap-2 bg-slate-900 px-4 py-2 rounded-xl border border-slate-800">
-                            {isEditingName ? (
-                                <input autoFocus className="bg-transparent outline-none text-center w-32 font-bold text-indigo-400" value={playerName} onChange={e => setPlayerName(e.target.value)} onBlur={() => setIsEditingName(false)} />
-                            ) : (
-                                <div className="flex items-center gap-2 cursor-pointer" onClick={() => setIsEditingName(true)}>
-                                    <span className="font-bold text-slate-400">{playerName}</span>
-                                    <Icon name="edit-3" size={14} className="text-indigo-500" />
+                <div className="h-full flex flex-col items-center p-4 md:p-6 bg-slate-950 overflow-y-auto">
+                    <div className="text-center mt-12 mb-10">
+                        <h1 className="text-6xl md:text-8xl font-black italic text-white tracking-tighter float">COYOTE</h1>
+                        <p className="text-indigo-500 font-bold tracking-[0.3em] ml-2">ONLINE PRO</p>
+                    </div>
+
+                    <div className="w-full max-w-lg space-y-6">
+                        <div className="glass-panel p-6 rounded-3xl space-y-2">
+                            <label className="text-[10px] font-black text-slate-500 uppercase flex items-center gap-2">
+                                <Icon name="user" size={12} /> あなたの表示名
+                            </label>
+                            <input className="w-full bg-slate-900/50 border-2 border-slate-800 p-4 rounded-2xl outline-none focus:border-indigo-500 transition-colors font-bold" placeholder="なまえ" value={playerName} onChange={e => setPlayerName(e.target.value)} />
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div className="glass-panel p-6 rounded-[2rem] border-t-4 border-indigo-600 space-y-4">
+                                <div className="flex items-center gap-2 text-indigo-400 font-black">
+                                    <Icon name="crown" size={20} />
+                                    <span>ホストとして遊ぶ</span>
                                 </div>
-                            )}
+                                <p className="text-xs text-slate-400">新しく部屋を作って、みんなを招待しましょう。</p>
+                                <div className="space-y-3">
+                                    <select value={maxPlayers} onChange={e => setMaxPlayers(e.target.value)} className="w-full bg-slate-800 border-2 border-slate-700 p-3 rounded-xl font-black outline-none appearance-none cursor-pointer">
+                                        {[2,3,4,5,6,7,8,9,10].map(n => <option key={n} value={n}>最大 {n} 名でプレイ</option>)}
+                                    </select>
+                                    <button onClick={createRoom} className="w-full py-4 bg-indigo-600 hover:bg-indigo-500 rounded-2xl font-black text-white shadow-lg transition-all flex items-center justify-center gap-2">
+                                        <Icon name="plus" size={18} /> 部屋を作成
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div className="glass-panel p-6 rounded-[2rem] border-t-4 border-emerald-500 space-y-4">
+                                <div className="flex items-center gap-2 text-emerald-400 font-black">
+                                    <Icon name="log-in" size={20} />
+                                    <span>ゲストとして参加</span>
+                                </div>
+                                <p className="text-xs text-slate-400">教えてもらったIDを入力して部屋に合流しましょう。</p>
+                                <div className="space-y-3">
+                                    <input className="w-full bg-slate-800 border-2 border-slate-700 p-3 rounded-xl outline-none focus:border-emerald-500 uppercase font-black text-center tracking-widest" placeholder="ID (6桁)" value={roomIdInput} onChange={e => setRoomIdInput(e.target.value)} />
+                                    <button onClick={joinRoom} className="w-full py-4 bg-emerald-600 hover:bg-emerald-500 rounded-2xl font-black text-white shadow-lg transition-all flex items-center justify-center gap-2">
+                                        参加する
+                                    </button>
+                                </div>
+                            </div>
                         </div>
+
+                        {error && <div className="text-red-400 text-sm font-bold text-center bg-red-400/10 py-3 rounded-xl border border-red-400/20">{error}</div>}
+
+                        <button onClick={() => setShowHelp(true)} className="w-full flex items-center justify-center gap-2 py-3 text-slate-500 font-bold hover:text-white transition-colors">
+                            <Icon name="help-circle" size={18} /> 遊び方・ルールを確認
+                        </button>
                     </div>
 
-                    <div className="w-full max-w-sm space-y-6">
-                        {errorMessage && (
-                            <div className="bg-red-500/10 border border-red-500/50 text-red-500 px-4 py-3 rounded-2xl text-xs font-bold flex items-center gap-2 shake">
-                                <Icon name="alert-circle" size={16} />
-                                {errorMessage}
+                    {showHelp && (
+                        <div className="fixed inset-0 bg-slate-950 z-[500] p-6 overflow-y-auto">
+                            <div className="max-w-2xl mx-auto space-y-8">
+                                <div className="flex justify-between items-center">
+                                    <h2 className="text-3xl font-black italic">HOW TO PLAY</h2>
+                                    <button onClick={() => setShowHelp(false)} className="p-2 bg-slate-900 rounded-full"><Icon name="x" /></button>
+                                </div>
+                                <section className="space-y-4">
+                                    <h3 className="text-xl font-bold text-indigo-400">基本ルール</h3>
+                                    <p className="text-slate-400 leading-relaxed">自分以外のカードを見て、全員の合計値を予想します。前のプレイヤーより大きい数字を言うか、「コヨーテ！」と宣言して間違いを指摘します。</p>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        <div className="bg-slate-900 p-4 rounded-2xl border border-white/5">
+                                            <h4 className="font-bold mb-2 text-indigo-300">コヨーテ成功</h4>
+                                            <p className="text-sm text-slate-500">前のプレイヤーが言った数字が合計値を超えていた → <span className="text-red-400">前の人がダメージ</span></p>
+                                        </div>
+                                        <div className="bg-slate-900 p-4 rounded-2xl border border-white/5">
+                                            <h4 className="font-bold mb-2 text-indigo-300">コヨーテ失敗</h4>
+                                            <p className="text-sm text-slate-500">前のプレイヤーが言った数字が合計値以下だった → <span className="text-red-400">自分がダメージ</span></p>
+                                        </div>
+                                    </div>
+                                </section>
+                                <section className="space-y-4 pb-12">
+                                    <h3 className="text-xl font-bold text-indigo-400">特殊カード（計算順序）</h3>
+                                    <div className="grid grid-cols-1 gap-2">
+                                        <div className="flex gap-4 items-center bg-slate-900 p-3 rounded-xl border border-white/5">
+                                            <div className="w-10 h-10 bg-pink-500 rounded flex items-center justify-center font-black">?</div>
+                                            <div><div className="font-bold">1. 引き直し</div><div className="text-xs text-slate-500">計算前に山札から新しいカードを引く</div></div>
+                                        </div>
+                                        <div className="flex gap-4 items-center bg-slate-900 p-3 rounded-xl border border-white/5">
+                                            <div className="w-10 h-10 bg-cyan-500 rounded flex items-center justify-center font-black">M0</div>
+                                            <div><div className="font-bold">2. 最大値は0</div><div className="text-xs text-slate-500">場の一番大きな数字を0にする</div></div>
+                                        </div>
+                                        <div className="flex gap-4 items-center bg-slate-900 p-3 rounded-xl border border-white/5">
+                                            <div className="w-10 h-10 bg-indigo-500 rounded flex items-center justify-center font-black">×2</div>
+                                            <div><div className="font-bold">3. 合計を2倍</div><div className="text-xs text-slate-500">最後に合計値を2倍にする</div></div>
+                                        </div>
+                                    </div>
+                                </section>
                             </div>
-                        )}
-
-                        <div className="space-y-4 bg-slate-900/40 p-5 rounded-[2.5rem] border border-slate-800">
-                            <div className="space-y-2">
-                                <p className="text-[10px] font-black text-slate-500 px-2 uppercase tracking-widest">Max Players: {maxPlayers}</p>
-                                <input type="range" min="2" max="8" value={maxPlayers} onChange={e => setMaxPlayers(parseInt(e.target.value))} className="w-full h-2 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-indigo-600" />
-                            </div>
-                            
-                            <div className="bg-slate-900/50 p-2 rounded-3xl border border-slate-800 focus-within:border-indigo-500 transition-colors flex items-center">
-                                <input 
-                                    placeholder="好きなIDを入力" 
-                                    className="flex-grow bg-transparent border-none py-3 px-4 font-bold text-lg outline-none placeholder:text-slate-700"
-                                    value={customRoomId}
-                                    onChange={e => { setCustomRoomId(e.target.value); setErrorMessage(''); }}
-                                />
-                                <button 
-                                    disabled={isProcessing}
-                                    onClick={() => createRoom(false)} 
-                                    className={`px-6 py-3 rounded-2xl font-black text-sm transition-all ${isProcessing ? 'bg-slate-800 text-slate-600' : 'bg-indigo-600 text-white active:scale-95'}`}
-                                >
-                                    作成
-                                </button>
-                            </div>
-                            <button 
-                                disabled={isProcessing}
-                                onClick={() => createRoom(true)} 
-                                className="w-full py-3 bg-slate-800 rounded-2xl font-bold text-slate-300 border border-slate-700 active:scale-95 transition-all disabled:opacity-50 text-sm"
-                            >
-                                ランダムIDで作成
-                            </button>
                         </div>
-
-                        <div className="relative flex items-center py-2">
-                            <div className="flex-grow border-t border-slate-800"></div>
-                            <span className="px-4 text-[10px] font-black text-slate-700 uppercase">Join Room</span>
-                            <div className="flex-grow border-t border-slate-800"></div>
-                        </div>
-
-                        <div className="bg-slate-900/50 p-2 rounded-3xl border border-slate-800 focus-within:border-white transition-colors flex items-center">
-                            <input 
-                                placeholder="IDを入力" 
-                                className="flex-grow bg-transparent border-none py-3 px-4 font-mono text-lg tracking-widest outline-none placeholder:text-slate-700 uppercase"
-                                value={roomIdInput}
-                                onChange={e => { setRoomIdInput(e.target.value); setErrorMessage(''); }}
-                            />
-                            <button 
-                                disabled={isProcessing}
-                                onClick={() => joinRoom()} 
-                                className={`p-3 rounded-full transition-all ${isProcessing ? 'bg-slate-800 text-slate-600' : 'bg-white text-slate-950 active:scale-90'}`}
-                            >
-                                <Icon name="arrow-right" />
-                            </button>
-                        </div>
-                    </div>
+                    )}
                 </div>
             );
 
+            const isMyTurn = room.status === 'playing' && room.players[room.currentTurn]?.uid === user.uid;
+
             return (
-                <div className="h-full flex flex-col bg-slate-950 overflow-hidden">
-                    <header className="p-4 flex justify-between items-center bg-slate-900/50 backdrop-blur-md border-b border-slate-800">
+                <div className="h-full flex flex-col bg-slate-950">
+                    {winner && <Confetti />}
+
+                    <header className="p-4 flex justify-between items-center border-b border-white/5 glass-panel z-50">
                         <div className="flex items-center gap-3">
-                            <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center font-black">C</div>
-                            <div>
-                                <p className="text-[10px] font-black text-slate-500 leading-none">ROOM ID: <span className="text-indigo-400 uppercase">{room.id}</span></p>
-                                <p className="text-[10px] font-bold text-slate-600 uppercase">{room.players.length}/{room.maxPlayers || 8} PLAYERS</p>
-                            </div>
+                            <span className="bg-indigo-600 text-[10px] font-black px-2 py-1 rounded">ROOM</span>
+                            <span className="font-black tracking-tighter text-lg">{room.id}</span>
                         </div>
-                        <div className="flex gap-2">
-                             <button onClick={() => {
-                                const currentUrl = new URL(window.location.href);
-                                currentUrl.searchParams.set('room', room.id);
-                                const copyText = currentUrl.toString();
-                                const el = document.createElement('textarea');
-                                el.value = copyText;
-                                document.body.appendChild(el);
-                                el.select();
-                                try { document.execCommand('copy'); } catch(e) {}
-                                document.body.removeChild(el);
-                                
-                                setErrorMessage('招待URLをコピーしました！');
-                                setTimeout(() => setErrorMessage(''), 2000);
-                            }} className="p-2 bg-slate-800 rounded-full text-slate-400 flex items-center gap-2 px-4 active:scale-95 transition-all">
-                                <Icon name="share-2" size={16} />
-                                <span className="text-xs font-bold">招待</span>
-                            </button>
-                            <button onClick={() => { setRoom(null); setErrorMessage(''); }} className="p-2 bg-red-900/20 text-red-500 rounded-full px-4 text-xs font-bold">退室</button>
+                        <div className="flex items-center gap-4">
+                            <div className="flex items-center gap-1.5 text-slate-500">
+                                <Icon name="layers" size={14} />
+                                <span className="text-[10px] font-black">{room.deck?.length || 0}</span>
+                            </div>
+                            <div className="flex items-center gap-1.5 text-slate-500">
+                                <Icon name="users" size={14} />
+                                <span className="text-[10px] font-black">{room.players.length}/{room.maxPlayers}</span>
+                            </div>
+                            {/* Wait screen exit button */}
+                            {room.status === 'waiting' && (
+                                <button onClick={leaveRoom} className="ml-2 p-2 bg-red-500/10 text-red-400 rounded-lg hover:bg-red-500/20 transition-colors">
+                                    <Icon name="log-out" size={18} />
+                                </button>
+                            )}
                         </div>
                     </header>
-                    
-                    <main className="flex-grow relative flex flex-col items-center justify-center">
-                        <div className="text-center z-10">
-                            <p className="text-[10px] font-black text-indigo-400 uppercase tracking-widest mb-2">
-                                {room.status === 'playing' ? `${room.players[room.currentTurn]?.name} のターン` : '待機中...'}
-                            </p>
-                            <div className="text-9xl font-black italic text-white drop-shadow-2xl">{room.currentValue}</div>
-                        </div>
 
-                        {room.status === 'waiting' && (
-                            <div className="absolute bottom-10 w-full max-w-xs px-6">
-                                {room.hostId === user.uid ? (
-                                    <button 
-                                        disabled={isProcessing || room.players.length < 2}
-                                        onClick={startGame} 
-                                        className="w-full py-5 bg-indigo-600 rounded-[2rem] font-black text-xl italic shadow-2xl active:scale-95 transition-all disabled:opacity-50"
-                                    >
-                                        START GAME
-                                    </button>
-                                ) : (
-                                    <div className="text-center py-5 bg-slate-900/50 rounded-[2rem] border border-slate-800 font-bold text-slate-500 animate-pulse">
-                                        ホストを待っています
-                                    </div>
-                                )}
+                    <main className="flex-grow relative overflow-hidden">
+                        <div className="absolute inset-0 flex items-start justify-center pt-8 px-4">
+                            <div className="flex gap-4 overflow-x-auto no-scrollbar pb-8 w-full justify-center">
+                                {room.players.map((p, i) => {
+                                    const isMe = p.uid === user.uid;
+                                    const isActive = p.hp > 0;
+                                    const revealed = room.status === 'result' || (!isMe && isActive) || (isSpectator && isActive);
+                                    const isTurn = room.status === 'playing' && room.currentTurn === i;
+                                    return (
+                                        <div key={p.uid} className={`flex flex-col items-center gap-2 transition-all duration-500 ${!isActive ? 'grayscale opacity-30' : ''} ${isTurn ? 'scale-110' : ''}`}>
+                                            <CoyoteCard card={p.currentCard} revealed={revealed} isMe={isMe} />
+                                            <div className="text-center">
+                                                <div className={`text-[10px] font-black mb-1 truncate w-20 ${isMe ? 'text-indigo-400' : 'text-slate-400'}`}>{p.name}</div>
+                                                <div className="flex justify-center gap-1">
+                                                    {[...Array(3)].map((_, j) => (
+                                                        <div key={j} className={`w-1.5 h-1.5 rounded-full ${j < p.hp ? 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.5)]' : 'bg-slate-800'}`}></div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                            {isTurn && <div className="w-1.5 h-1.5 bg-indigo-500 rounded-full animate-ping"></div>}
+                                        </div>
+                                    );
+                                })}
                             </div>
-                        )}
-
-                        <div className="absolute top-10 flex gap-4 overflow-x-auto w-full px-10 no-scrollbar justify-center">
-                            {room.players.map(p => {
-                                const canSeeCard = isSpectator || room.status === 'result' || p.uid !== user.uid;
-                                
-                                return (
-                                    <div key={p.uid} className={`flex flex-col items-center gap-2 shrink-0 transition-opacity ${p.hp <= 0 ? 'opacity-40' : 'opacity-100'}`}>
-                                        <div className={`w-14 h-20 rounded-xl border-2 flex items-center justify-center transition-all ${p.uid === user.uid ? 'bg-indigo-600 border-indigo-400 shadow-[0_0_15px_rgba(79,70,229,0.5)]' : 'bg-white text-slate-950 border-white'}`}>
-                                            <span className={`text-xl font-black italic ${isSpectator && p.hp > 0 ? 'text-indigo-600' : ''}`}>
-                                                { (canSeeCard && p.currentCard) ? (p.currentCard.value ?? p.currentCard.type ?? '?') : (p.hp > 0 ? '?' : '-') }
-                                            </span>
-                                        </div>
-                                        <div className="flex items-center gap-1">
-                                            {Array.from({length: 3}).map((_, i) => (
-                                                <div key={i} className={`w-1.5 h-1.5 rounded-full ${i < p.hp ? 'bg-red-500' : 'bg-slate-800'}`}></div>
-                                            ))}
-                                        </div>
-                                        <span className={`text-[10px] font-black ${p.uid === user.uid ? 'text-indigo-400' : 'text-slate-500'}`}>{p.name}</span>
-                                    </div>
-                                );
-                            })}
                         </div>
 
-                        {room.status === 'playing' && room.players[room.currentTurn]?.uid === user.uid && !isSpectator && (
-                             <div className="absolute bottom-10 w-full max-w-sm px-6 space-y-4">
-                                <div className="bg-slate-900 border border-slate-800 p-4 rounded-3xl flex justify-between items-center shadow-2xl">
-                                    <button onClick={() => setDeclaredValue(v => Math.max(room.currentValue + 1, (v || room.currentValue + 1) - 1))} className="w-12 h-12 bg-slate-800 rounded-full flex items-center justify-center active:bg-slate-700"><Icon name="minus" /></button>
-                                    <span className="text-5xl font-black italic text-white">{declaredValue || room.currentValue + 1}</span>
-                                    <button onClick={() => setDeclaredValue(v => Math.max(room.currentValue + 1, (v || room.currentValue + 1) + 1))} className="w-12 h-12 bg-slate-800 rounded-full flex items-center justify-center active:bg-slate-700"><Icon name="plus" /></button>
+                        <div className="absolute inset-0 flex flex-col items-center justify-center">
+                            {room.status === 'playing' && (
+                                <div className="text-center">
+                                    <div className="text-[10px] font-black text-indigo-400 tracking-[0.4em] mb-2 uppercase">Current Target</div>
+                                    <div className="text-9xl font-black italic text-white drop-shadow-[0_0_30px_rgba(255,255,255,0.2)]">{room.currentValue}</div>
                                 </div>
-                                <div className="grid grid-cols-2 gap-4">
-                                    <button onClick={async () => {
-                                        const v = declaredValue || room.currentValue + 1;
-                                        let nextTurn = (room.currentTurn + 1) % room.players.length;
-                                        while(room.players[nextTurn].hp <= 0) {
-                                            nextTurn = (nextTurn + 1) % room.players.length;
-                                        }
-                                        await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'rooms', room.id), {
-                                            currentValue: v,
-                                            currentTurn: nextTurn
-                                        });
-                                        setDeclaredValue(0);
-                                    }} className="py-5 bg-indigo-600 rounded-2xl font-black italic text-xl shadow-lg active:scale-95 transition-all">RAISE</button>
-                                    <button onClick={async () => {
-                                        const activePlayersCards = room.players.filter(p => p.hp > 0).map(p => p.currentCard);
-                                        const total = calculateTotal(activePlayersCards);
-                                        const isSuccess = room.currentValue > total;
-                                        
-                                        let prevTurn = (room.currentTurn - 1 + room.players.length) % room.players.length;
-                                        while(room.players[prevTurn].hp <= 0) {
-                                            prevTurn = (prevTurn - 1 + room.players.length) % room.players.length;
-                                        }
-                                        
-                                        const loserIdx = isSuccess ? prevTurn : room.currentTurn;
-                                        const newPlayers = room.players.map((p, i) => i === loserIdx ? { ...p, hp: p.hp - 1 } : p);
-                                        
-                                        await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'rooms', room.id), {
-                                            status: 'result',
-                                            lastResult: { total, loserName: room.players[loserIdx].name, success: isSuccess },
-                                            players: newPlayers
-                                        });
-                                    }} className="py-5 bg-red-600 rounded-2xl font-black italic text-xl shadow-lg active:scale-95 transition-all">COYOTE!</button>
-                                </div>
-                             </div>
-                        )}
+                            )}
 
-                        {room.status === 'result' && (
-                            <div className="absolute inset-0 bg-slate-950/95 flex items-center justify-center p-6 z-[200] backdrop-blur-sm">
-                                <div className="bg-white text-slate-950 p-8 rounded-[3rem] w-full max-w-xs text-center shadow-[0_0_50px_rgba(255,255,255,0.2)]">
-                                    <p className="font-black text-slate-400 text-xs tracking-widest uppercase">The Total Was</p>
-                                    <h2 className="text-8xl font-black italic my-4 text-indigo-600">{room.lastResult?.total}</h2>
-                                    <div className={`inline-block px-4 py-1 rounded-full text-[10px] font-black uppercase mb-4 ${room.lastResult?.success ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}`}>
-                                        {room.lastResult?.success ? 'Coyote Success!' : 'Coyote Failed...'}
+                            {room.status === 'waiting' && (
+                                <div className="bg-slate-900/50 backdrop-blur-xl p-8 rounded-[2rem] border border-white/5 text-center max-w-[320px] shadow-2xl">
+                                    <Icon name="clock" size={32} className="mx-auto mb-4 text-indigo-500 animate-pulse" />
+                                    <h2 className="text-2xl font-black italic mb-2 uppercase tracking-tighter">Waiting Lobby</h2>
+                                    <p className="text-slate-500 text-sm mb-6">他の参加者を待っています。人数が集まったらホストが開始できます。</p>
+                                    
+                                    <div className="space-y-3">
+                                        {room.hostId === user.uid ? (
+                                            room.players.length >= 2 ? (
+                                                <button onClick={startGame} className="w-full py-4 bg-indigo-600 rounded-2xl font-black text-xl italic hover:scale-105 transition-all shadow-xl flex items-center justify-center gap-2">
+                                                    <Icon name="play" size={20} /> GAME START
+                                                </button>
+                                            ) : (
+                                                <div className="py-4 bg-slate-800/50 text-slate-400 rounded-2xl font-bold text-sm border border-white/5">
+                                                    あと {2 - room.players.length} 名で開始可能
+                                                </div>
+                                            )
+                                        ) : (
+                                            <div className="py-4 bg-indigo-500/10 text-indigo-400 rounded-2xl font-bold border border-indigo-500/20 animate-pulse">
+                                                ホストの開始待ち...
+                                            </div>
+                                        )}
+                                        
+                                        <button onClick={leaveRoom} className="w-full py-3 text-slate-500 hover:text-white font-bold text-sm flex items-center justify-center gap-2 transition-colors">
+                                            <Icon name="arrow-left" size={16} /> 部屋を出てトップに戻る
+                                        </button>
                                     </div>
-                                    <p className="font-bold text-lg mb-6 leading-tight">{room.lastResult?.loserName} <br/><span className="text-sm opacity-50 text-red-600 italic">LOST 1 LIFE</span></p>
+                                </div>
+                            )}
+
+                            {room.status === 'result' && !winner && (
+                                <div className="bg-white text-slate-950 p-8 rounded-[3rem] w-full max-w-[280px] text-center celebrate-anim shadow-2xl">
+                                    <div className="text-[10px] font-black text-slate-400 tracking-widest mb-2 uppercase">Actual Total</div>
+                                    <div className="text-7xl font-black italic mb-4 text-indigo-600">{room.lastResult?.total}</div>
+                                    <div className="font-bold text-lg mb-6 leading-tight">
+                                        {room.lastResult?.loserName}が<br/>ダメージを受けた！
+                                    </div>
                                     {room.hostId === user.uid && (
-                                        <button onClick={startGame} className="w-full py-4 bg-slate-950 text-white rounded-2xl font-black italic text-lg hover:bg-indigo-600 transition-colors">NEXT ROUND</button>
+                                        <button onClick={startGame} className="w-full py-4 bg-slate-950 text-white rounded-2xl font-black hover:bg-indigo-600 transition-colors">次へ進む</button>
                                     )}
+                                </div>
+                            )}
+                        </div>
+
+                        {winner && (
+                            <div className="absolute inset-0 bg-slate-950/90 z-[300] flex flex-col items-center justify-center p-6 backdrop-blur-xl celebrate-anim">
+                                <div className="w-24 h-24 bg-yellow-500 rounded-full flex items-center justify-center mb-6 shadow-[0_0_50px_rgba(234,179,8,0.3)]">
+                                    <Icon name="trophy" size={48} className="text-white" />
+                                </div>
+                                <h2 className="text-white text-3xl font-bold mb-2">{winner.name}</h2>
+                                <h1 className="text-6xl md:text-8xl font-black text-yellow-500 mb-12 tracking-tighter italic text-center leading-[0.9]">優勝！<br/>おめでとう</h1>
+                                <div className="flex flex-col gap-4 w-full max-w-xs">
+                                    {room.hostId === user.uid && (
+                                        <button onClick={() => updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'rooms', room.id), { status: 'waiting', players: room.players.map(p => ({...p, hp:3}))})} className="w-full py-5 bg-white text-slate-950 rounded-full font-black text-xl shadow-xl hover:scale-110 active:scale-95 transition-all">もう一度遊ぶ</button>
+                                    )}
+                                    <button onClick={leaveRoom} className="w-full py-3 text-slate-400 hover:text-white font-bold transition-colors">ロビーを出て終了</button>
                                 </div>
                             </div>
                         )}
                     </main>
+
+                    {isMyTurn && !winner && (
+                        <footer className="p-6 bg-slate-900/50 backdrop-blur-xl border-t border-white/5">
+                            <div className="max-w-md mx-auto grid grid-cols-2 gap-4">
+                                <button onClick={() => updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'rooms', room.id), { currentValue: room.currentValue + 1, currentTurn: (room.currentTurn + 1) % room.players.length })} className="py-5 bg-indigo-600 rounded-3xl font-black text-2xl italic shadow-xl active:scale-95 transition-all">RAISE {room.currentValue + 1}</button>
+                                <button onClick={handleCoyote} className="py-5 bg-red-600 rounded-3xl font-black text-2xl italic shadow-xl active:scale-95 transition-all">COYOTE!</button>
+                            </div>
+                        </footer>
+                    )}
                 </div>
             );
         }
