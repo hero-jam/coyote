@@ -244,7 +244,7 @@
 
             const cpuNames = ["ロボ太郎", "AI次郎", "電脳三郎", "計算四郎", "メカ五郎", "サイバー六郎"];
 
-            // 認証ロジックの安定化
+            // 認証プロセスの安定化
             useEffect(() => {
                 let mounted = true;
                 const initAuth = async () => {
@@ -509,7 +509,7 @@
                 }
             }, [room?.currentTurn, room?.status, user]);
 
-            if (loading) return <div className="h-full flex flex-col items-center justify-center text-indigo-500 font-bold animate-pulse"><div className="mb-4">AUTHENTICATING...</div><div className="w-12 h-12 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin"></div></div>;
+            if (loading) return <div className="h-full flex flex-col items-center justify-center text-indigo-500 font-bold animate-pulse"><div className="mb-4 text-center">AUTHENTICATING...</div><div className="w-12 h-12 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin"></div></div>;
 
             if (error && !user) return <div className="h-full flex items-center justify-center text-red-500 font-bold p-10 text-center">{error}</div>;
 
@@ -520,7 +520,7 @@
                         <p className="text-indigo-400 font-bold tracking-widest uppercase text-xs mt-2 opacity-80 underline decoration-indigo-500 decoration-2 underline-offset-4">Online Pro Edition</p>
                     </div>
 
-                    <div className="w-full max-sm space-y-4">
+                    <div className="w-full max-w-md space-y-4"> {/* ここで枠の最大幅を制限しました */}
                         <div className="glass-panel p-6 rounded-[2rem] border border-white/10">
                             <div className="space-y-6">
                                 <div>
