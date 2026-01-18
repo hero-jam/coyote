@@ -62,7 +62,6 @@
         import { getFirestore, doc, setDoc, getDoc, updateDoc, onSnapshot, collection } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         const firebaseConfig = JSON.parse(__firebase_config);
-
         const app = initializeApp(firebaseConfig);
         const auth = getAuth(app);
         const db = getFirestore(app);
@@ -245,13 +244,15 @@
 
             const cpuNames = ["ロボ太郎", "AI次郎", "電脳三郎", "計算四郎", "メカ五郎", "サイバー六郎"];
 
+            // 認証ロジックの安定化
             useEffect(() => {
+                let mounted = true;
                 const initAuth = async () => {
                     if (!window.FB) return;
                     const { auth, onAuthStateChanged, signInAnonymously, signInWithCustomToken } = window.FB;
                     
                     const unsubscribe = onAuthStateChanged(auth, (u) => {
-                        if (u) {
+                        if (u && mounted) {
                             setUser(u);
                             setLoading(false);
                         }
@@ -260,20 +261,32 @@
                     try {
                         if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
                             await signInWithCustomToken(auth, __initial_auth_token);
-                        } else {
+                        } else if (!auth.currentUser) {
                             await signInAnonymously(auth);
+                        } else if (mounted) {
+                            setUser(auth.currentUser);
+                            setLoading(false);
                         }
                     } catch (err) {
                         console.error("Auth error:", err);
-                        setError("認証エラーが発生しました。");
-                        setLoading(false);
+                        if (mounted) {
+                            setError("認証エラーが発生しました。");
+                            setLoading(false);
+                        }
                     }
 
                     return unsubscribe;
                 };
 
-                if (window.FB) initAuth();
-                else window.addEventListener('firebase-ready', initAuth);
+                const timer = setTimeout(() => {
+                    if (window.FB) initAuth();
+                    else window.addEventListener('firebase-ready', initAuth, { once: true });
+                }, 100);
+
+                return () => {
+                    mounted = false;
+                    clearTimeout(timer);
+                };
             }, []);
 
             useEffect(() => {
@@ -294,21 +307,17 @@
 
             const generateDeck = () => {
                 const deck = [];
-                // コヨーテカード計26枚
                 const coyote = [
                     { v: 1, c: 1 }, { v: 2, c: 4 }, { v: 3, c: 4 }, { v: 4, c: 4 }, 
                     { v: 5, c: 4 }, { v: 10, c: 3 }, { v: 15, c: 2 }, { v: 20, c: 1 }
                 ];
-                // おばけカード計3枚
                 const ghost = [{ v: 0, c: 3 }];
-                // 兵隊カード計3枚
                 const soldier = [{ v: -5, c: 2 }, { v: -10, c: 1 }];
-                // 特殊カード計4枚
                 const special = [
-                    { t: 'night', v: 0, c: 1 }, // 夜
-                    { t: 'x2', v: 0, c: 1 },    // 酋長
-                    { t: 'max0', v: 0, c: 1 },  // キツネ
-                    { t: '?', v: 0, c: 1 }      // ほらあな
+                    { t: 'night', v: 0, c: 1 },
+                    { t: 'x2', v: 0, c: 1 },
+                    { t: 'max0', v: 0, c: 1 },
+                    { t: '?', v: 0, c: 1 }
                 ];
 
                 [...coyote, ...ghost, ...soldier, ...special].forEach(d => { 
@@ -327,7 +336,6 @@
                 let cards = players.filter(p => p.hp > 0).map(p => p.currentCard).filter(Boolean);
                 let finalCards = [...cards];
                 
-                // 1. ほらあな (?) の解決
                 const qIdx = finalCards.findIndex(c => c.type === '?');
                 let resolvedQ = null;
                 if (qIdx !== -1 && deck.length > 0) {
@@ -335,7 +343,6 @@
                     finalCards[qIdx] = resolvedQ;
                 }
                 
-                // 2. キツネ (MAX→0) の適用
                 const hasMax0 = finalCards.some(c => c.type === 'max0');
                 let values = finalCards.map(c => c.value || 0);
                 if (hasMax0) {
@@ -344,10 +351,8 @@
                     if (maxIdx !== -1) values[maxIdx] = 0;
                 }
                 
-                // 3. 合計算出
                 let sum = values.reduce((a, b) => a + b, 0);
                 
-                // 4. 酋長 (×2) の適用
                 const hasX2 = finalCards.some(c => c.type === 'x2');
                 if (hasX2) sum *= 2;
                 
@@ -434,7 +439,6 @@
                     const updatedPlayers = room.players.map((p, i) => i === loserIdx ? { ...p, hp: p.hp - 1 } : p);
                     const aliveCount = updatedPlayers.filter(p => p.hp > 0).length;
 
-                    // 夜カードがあったかチェック
                     const hasNight = room.players.some(p => p.currentCard?.type === 'night');
 
                     let updatedDeck = [...room.deck];
@@ -469,7 +473,6 @@
             };
 
             const startGame = async () => {
-                // 夜カード使用後または山札不足時はリシャッフル
                 let deck;
                 if (room.lastResult?.requiresReshuffle || !room.deck || room.deck.length < room.players.length) {
                     deck = generateDeck();
